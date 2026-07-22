@@ -84,32 +84,3 @@ images out of the box too.
 Adding a new project is just adding a new `.mdx` file to `content/projects/` — no code
 changes required. It will automatically appear on `/projects` and (if `featured: true`)
 on the home page.
-
-## Before you deploy — placeholders to replace
-
-- **`lib/site.ts`** — `links.github` and `links.linkedin` are placeholders
-  (`your-github-username` / `your-linkedin-handle`). Update with your real profile URLs.
-- **`public/resume.pdf`** — the Resume button links to `/resume.pdf`, which does not
-  exist yet. Add your resume PDF at `public/resume.pdf`.
-- **Per-project `links`** — each MDX file's frontmatter has an empty `links: {}`.
-  Fill in `github` / `demo` / `video` as those repos/demos go live.
-- **`lib/site.ts` → `url`** — set to your real production domain before relying on the
-  generated `sitemap.xml`, `robots.txt`, or OpenGraph metadata.
-- **Media placeholders** — the `<Figure />` blocks and card artwork are intentional
-  placeholders ("media pending") until real screenshots/diagrams/videos are ready.
-
-## Design System Notes
-
-- Colors and fonts are defined in `app/globals.css` using Tailwind v4's `@theme inline`
-  — no separate `tailwind.config.js`.
-- `components/FadeIn.tsx` implements a lightweight IntersectionObserver-based scroll
-  reveal (respects `prefers-reduced-motion`).
-- `components/ProjectVisual.tsx` and `components/Figure.tsx` generate the technical
-  "figure placeholder" artwork (grid paper background, corner brackets, small SVG
-  diagrams) used until real project media is added.
-
-## Deploying
-
-This is a standard Next.js App Router project — push to a Git repo and import it on
-[Vercel](https://vercel.com/new) with default settings. No environment variables are
-required.
