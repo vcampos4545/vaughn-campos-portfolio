@@ -1,0 +1,100 @@
+---
+title: "Balancing Triangle"
+description: "A reaction-wheel controlled balancing robot using embedded control systems."
+tags: ["STM32", "C", "IMU Sensors", "PID Control", "Embedded Systems"]
+status: "completed"
+featured: true
+order: 3
+year: "2025"
+diagram: "triangle"
+links: {}
+---
+
+## Overview
+
+A self-balancing triangular robot that uses an IMU and a single reaction wheel to
+stabilize around one pivot point. Unlike a two-wheeled balancing robot that
+balances by driving wheels along the ground, this project balances entirely
+through reaction-wheel momentum exchange — closer in spirit to spacecraft
+attitude control than to a conventional wheeled robot.
+
+<Figure label="Hardware photo" kind="image" caption="Assembled triangle chassis with reaction wheel and STM32 control board mounted." />
+
+## Problem
+
+Balancing on a single pivot point using only a reaction wheel is an inherently
+unstable control problem: the system is open-loop unstable, and the only
+actuator available is a wheel that exchanges angular momentum with the body
+rather than pushing against the ground. That means the controller has to work
+entirely through momentum transfer, and available control torque is limited by
+motor and wheel inertia.
+
+The project needed:
+
+- Accurate real-time tilt-angle estimation from noisy IMU data
+- A control loop fast and stable enough to catch the system before it falls
+- Embedded firmware that can hit a hard real-time control loop rate on
+  resource-constrained hardware
+
+## Technical Architecture
+
+<Figure label="Control block diagram" kind="diagram" caption="Sensor fusion, PID control law, and motor driver stages of the control loop." />
+
+<Figure label="CAD model" kind="model" caption="Triangular chassis and reaction wheel mount, designed for a low, stable center of mass." />
+
+- **Sensing** — An IMU (accelerometer + gyroscope) provides raw tilt-rate and
+  gravity-vector measurements, fused into a stable tilt-angle estimate with a
+  complementary filter to combine the gyro's short-term accuracy with the
+  accelerometer's long-term stability.
+- **Control (STM32, C)** — A PID controller running on a fixed-rate timer
+  interrupt computes the corrective torque command from the estimated tilt
+  angle and rate.
+- **Actuation** — The torque command drives the reaction wheel motor; the
+  resulting change in wheel angular momentum applies an equal and opposite
+  reaction torque to the body, per conservation of angular momentum.
+
+## Implementation Details
+
+The control loop runs on a hardware timer interrupt on the STM32 to guarantee a
+consistent sample rate, since PID gains tuned at one control rate don't transfer
+cleanly to another. IMU readings are fused with a complementary filter rather
+than a full Kalman filter — simpler to implement and tune on embedded hardware,
+and sufficient given the IMU noise characteristics observed on this platform.
+
+Reaction wheel speed is monitored to avoid actuator saturation: if the wheel
+approaches its maximum RPM, it has less headroom left to exchange momentum with
+the body, so the mechanical design biased toward a wheel/motor combination with
+enough headroom for the expected disturbance range.
+
+## Challenges
+
+Getting the complementary filter's tuning right — balancing responsiveness to
+fast tilt changes against susceptibility to accelerometer noise — took several
+iterations. PID tuning was similarly iterative: gains that looked stable in a
+bench test would sometimes oscillate once the full chassis mass and center of
+gravity were accounted for, requiring re-tuning with the real hardware rather
+than an idealized model.
+
+## Results
+
+<Figure label="Balancing test video" kind="video" caption="The triangle recovering from a manual push disturbance and re-stabilizing." />
+
+The final system reliably self-balances from a near-vertical starting position
+and rejects moderate manual disturbances (a light push) without falling,
+demonstrating stable closed-loop control purely through reaction-wheel momentum
+exchange.
+
+## Lessons Learned
+
+Tuning a real embedded control loop is a different exercise from tuning a
+simulated one — sensor noise, actuator saturation, and timing jitter all show up
+in ways that are easy to abstract away in simulation. Building the mechanical
+platform with generous reaction-wheel headroom made the control problem
+meaningfully easier than a tightly-constrained design would have.
+
+## Future Work
+
+- Add a second reaction wheel for full planar (not just single-axis) balance
+- Move from a complementary filter to a Kalman filter for improved estimation
+  under faster disturbances
+- Add telemetry logging over wireless link for post-test analysis

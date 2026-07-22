@@ -1,0 +1,101 @@
+---
+title: "Mulligan AI"
+description: "AI-powered healthcare workflow platform for generating insurance appeals."
+tags: ["Next.js", "React", "Supabase", "Postgres", "AWS", "LLMs"]
+status: "active"
+featured: true
+order: 4
+year: "2025"
+diagram: "circuit"
+links: {}
+---
+
+## Overview
+
+A healthcare platform that processes insurance denial documents and helps
+generate appeals using AI. Insurance claim denials are common, time-consuming to
+appeal, and disproportionately burden patients and providers who don't have the
+time or expertise to write a strong appeal letter. Mulligan AI streamlines that
+process end to end: upload a denial document, and the platform extracts the
+relevant details and drafts a supporting appeal.
+
+<Figure label="Application screenshot" kind="image" caption="Denial document upload and AI-generated appeal draft workflow." />
+
+## Problem
+
+Insurance appeals require synthesizing information from a denial letter, the
+underlying medical claim, and applicable policy language into a coherent,
+persuasive document — a process that's manual, slow, and inconsistent across
+providers. The platform needed to:
+
+- Reliably extract structured data (denial reason, claim details, policy
+  references) from unstructured/variably-formatted denial documents
+- Generate appeal drafts that are accurate and well-grounded in the source
+  documents, not generic or hallucinated
+- Handle sensitive healthcare data with an architecture appropriate for that
+  responsibility
+- Support a real multi-user workflow (accounts, document history, review) rather
+  than a single-shot script
+
+## Technical Architecture
+
+<Figure label="System architecture" kind="diagram" caption="Document ingestion, LLM processing pipeline, and application layers." />
+
+- **Frontend (Next.js/React)** — The document upload, review, and appeal-editing
+  interface, built as a standard Next.js application for fast iteration and
+  straightforward Vercel deployment.
+- **Data layer (Supabase/Postgres)** — User accounts, document metadata, and
+  generated appeal records, using Postgres row-level security to scope data
+  access per user.
+- **AI pipeline (LLMs)** — Document text extraction feeds into an LLM-based
+  pipeline that identifies denial reason codes and relevant claim details, then
+  drafts an appeal grounded in that extracted context.
+- **Infrastructure (AWS)** — Supporting services (file storage, background
+  processing) run on AWS alongside the Supabase-hosted data layer.
+
+## Implementation Details
+
+<Figure label="Data pipeline" kind="diagram" caption="From raw document upload to structured extraction to generated appeal." />
+
+The processing pipeline is intentionally staged rather than a single end-to-end
+prompt: documents are first parsed into structured fields (denial reason, dates,
+policy references), and only then does the generation step draft the appeal —
+grounded in the extracted fields rather than the raw document text. This keeps
+the generation step's context tight and makes failures easier to localize to
+either the extraction stage or the drafting stage.
+
+Postgres row-level security policies scope every query to the authenticated
+user, so document and appeal data access is enforced at the database layer
+rather than relying solely on application-level checks.
+
+## Challenges
+
+The central challenge is reliability: an appeal letter with an inaccurate or
+fabricated detail is worse than no appeal at all in a healthcare context.
+Grounding generation in explicitly extracted fields (rather than free-form
+summarization of the source document) was the main mitigation, along with
+surfacing the extracted fields to the user for review before an appeal is
+finalized — the human stays in the loop rather than the system operating fully
+autonomously.
+
+Handling healthcare-adjacent documents also raised the bar on data handling
+throughout the stack, from storage to access control to logging practices.
+
+## Results
+
+The platform successfully takes a user from "uploaded denial document" to
+"reviewed, ready-to-submit appeal draft" in a single guided workflow, replacing
+what would otherwise be a manual document-review-and-writing process.
+
+## Lessons Learned
+
+Splitting an LLM pipeline into an extraction stage and a generation stage — with
+a human review checkpoint in between — produced far more trustworthy output than
+a single end-to-end generation step, and made the system's failures much easier
+to diagnose and fix.
+
+## Future Work
+
+- Add appeal-outcome tracking to build a feedback loop on which appeal strategies succeed
+- Expand structured extraction to cover a wider range of denial and policy formats
+- Add provider-side collaboration features for multi-person appeal review

@@ -1,65 +1,127 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, SquareCode, Link2, FileText } from "lucide-react";
+import { getFeaturedProjects } from "@/lib/projects";
+import { site } from "@/lib/site";
+import { ProjectCard } from "@/components/ProjectCard";
+import { SectionHeading } from "@/components/SectionHeading";
+import { FadeIn } from "@/components/FadeIn";
 
-export default function Home() {
+const DOMAINS = [
+  "Orbital Mechanics",
+  "Attitude Control",
+  "Embedded Systems",
+  "Applied AI",
+  "Full-Stack Web",
+];
+
+export default function HomePage() {
+  const featuredProjects = getFeaturedProjects();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <>
+      {/* Hero */}
+      <section className="mx-auto max-w-6xl px-6 pt-20 pb-16 sm:pt-28 sm:pb-24">
+        <FadeIn>
+          <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.2em] text-accent">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            Engineering Log &mdash; Est. 2026
+          </div>
+
+          <h1 className="mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl">
+            Vaughn Campos
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p className="mt-4 font-mono text-base text-muted sm:text-lg">
+            {site.role}
           </p>
+
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted">
+            {site.description}
+          </p>
+
+          <div className="mt-10 flex flex-wrap items-center gap-4">
+            <Link
+              href="/projects"
+              className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent-foreground transition-transform hover:-translate-y-0.5"
+            >
+              View Projects
+              <ArrowRight size={14} />
+            </Link>
+            <a
+              href={site.resumeHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-border-strong px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground transition-colors hover:border-accent hover:text-accent"
+            >
+              <FileText size={14} />
+              Resume
+            </a>
+            <a
+              href={site.links.github}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-border-strong px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground transition-colors hover:border-accent hover:text-accent"
+            >
+              <SquareCode size={14} />
+              GitHub
+            </a>
+            <a
+              href={site.links.linkedin}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-border-strong px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground transition-colors hover:border-accent hover:text-accent"
+            >
+              <Link2 size={14} />
+              LinkedIn
+            </a>
+          </div>
+        </FadeIn>
+
+        <FadeIn delay={150}>
+          <div className="mt-16 flex flex-wrap gap-2 border-t border-border pt-8">
+            {DOMAINS.map((domain) => (
+              <span
+                key={domain}
+                className="rounded-full border border-border bg-surface px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-muted"
+              >
+                {domain}
+              </span>
+            ))}
+          </div>
+        </FadeIn>
+      </section>
+
+      {/* Featured projects */}
+      <section className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
+        <FadeIn>
+          <SectionHeading
+            index="01"
+            label="Featured Work"
+            title="Selected projects"
+            description="A mix of simulation, embedded control, and applied AI work — spanning spacecraft dynamics to production software."
+          />
+        </FadeIn>
+
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {featuredProjects.map((project, i) => (
+            <FadeIn key={project.slug} delay={i * 80}>
+              <ProjectCard project={project} index={i} />
+            </FadeIn>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+
+        <FadeIn>
+          <div className="mt-10">
+            <Link
+              href="/projects"
+              className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:text-foreground"
+            >
+              View all projects
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+        </FadeIn>
+      </section>
+    </>
   );
 }
