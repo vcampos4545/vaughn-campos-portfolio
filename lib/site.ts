@@ -8,7 +8,6 @@ export const site = {
   email: "vcampos4545@gmail.com",
   resumeHref: "/resume.pdf",
   links: {
-    // TODO: replace with your real profile URLs before deploying.
     github: "https://github.com/vcampos4545",
     linkedin: "https://www.linkedin.com/in/vaughn-campos",
   },

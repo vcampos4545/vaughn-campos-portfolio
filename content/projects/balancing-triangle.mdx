@@ -1,96 +1,158 @@
 ---
 title: "Balancing Triangle"
-description: "A reaction-wheel controlled balancing robot using embedded control systems."
-tags: ["STM32", "C", "IMU Sensors", "PID Control", "Embedded Systems"]
+description: "An ESP32 + SimpleFOC reaction-wheel robot that balances on one edge through pure momentum exchange, no ground contact."
+tags:
+  [
+    "ESP32",
+    "SimpleFOC",
+    "FOC",
+    "State-Feedback Control",
+    "IMU Sensor Fusion",
+    "Embedded Systems",
+  ]
 status: "completed"
 featured: true
 order: 3
 year: "2025"
 diagram: "triangle"
-links: {}
+links:
+  { github: "https://github.com/vcampos4545/reaction-wheel-balancer/tree/main" }
 ---
 
 ## Overview
 
-A self-balancing triangular robot that uses an IMU and a single reaction wheel to
-stabilize around one pivot point. Unlike a two-wheeled balancing robot that
-balances by driving wheels along the ground, this project balances entirely
-through reaction-wheel momentum exchange — closer in spirit to spacecraft
-attitude control than to a conventional wheeled robot.
+A triangular robot that balances standing on one edge by spinning a 2804
+gimbal BLDC reaction wheel, driven by an ESP32 running
+[SimpleFOC](https://simplefoc.com/) field-oriented control off an AS5600
+shaft encoder, with tilt sensed by an MPU6050. Unlike a two-wheeled balancing
+robot that balances by driving wheels along the ground, this project balances
+entirely through reaction-wheel angular-momentum exchange — closer in spirit
+to spacecraft attitude control than to a conventional wheeled robot.
 
-<Figure label="Hardware photo" kind="image" caption="Assembled triangle chassis with reaction wheel and STM32 control board mounted." />
+<Figure
+  label="Hardware photo"
+  kind="image"
+  caption="Assembled triangle chassis with reaction wheel, AS5600/MPU6050 sensors, and ESP32 control board mounted."
+  src="https://github.com/user-attachments/assets/b2003fc4-73b6-4eda-9392-98f873fcb0b0"
+/>
 
 ## Problem
 
-Balancing on a single pivot point using only a reaction wheel is an inherently
+Balancing on a single pivot edge using only a reaction wheel is an inherently
 unstable control problem: the system is open-loop unstable, and the only
 actuator available is a wheel that exchanges angular momentum with the body
 rather than pushing against the ground. That means the controller has to work
-entirely through momentum transfer, and available control torque is limited by
-motor and wheel inertia.
+entirely through momentum transfer, and available control torque is limited
+by wheel inertia and motor torque headroom — with no way to dissipate
+momentum, only move it around.
 
 The project needed:
 
 - Accurate real-time tilt-angle estimation from noisy IMU data
-- A control loop fast and stable enough to catch the system before it falls
-- Embedded firmware that can hit a hard real-time control loop rate on
-  resource-constrained hardware
+- A control loop that both stabilizes body tilt and keeps the reaction
+  wheel's own speed from saturating
+- FOC motor commutation good enough to deliver smooth low-speed torque
+  through a low-cost gimbal motor and magnetic encoder
+- Firmware robust enough to recover on its own from I2C-bus-level lockups
+  during extended runs, rather than needing a manual reset
 
 ## Technical Architecture
 
-<Figure label="Control block diagram" kind="diagram" caption="Sensor fusion, PID control law, and motor driver stages of the control loop." />
+<Figure
+  label="Control block diagram"
+  kind="diagram"
+  caption="Sensor fusion, state-feedback control law, and FOC motor driver stages of the control loop."
+/>
 
-<Figure label="CAD model" kind="model" caption="Triangular chassis and reaction wheel mount, designed for a low, stable center of mass." />
+<Figure
+  label="Frame CAD"
+  kind="model"
+  caption="Triangular chassis and reaction-wheel mount, designed for a low, stable center of mass."
+  src="https://github.com/user-attachments/assets/a25d4c56-96c0-489f-b174-5679add349fe"
+/>
 
-- **Sensing** — An IMU (accelerometer + gyroscope) provides raw tilt-rate and
-  gravity-vector measurements, fused into a stable tilt-angle estimate with a
-  complementary filter to combine the gyro's short-term accuracy with the
-  accelerometer's long-term stability.
-- **Control (STM32, C)** — A PID controller running on a fixed-rate timer
-  interrupt computes the corrective torque command from the estimated tilt
-  angle and rate.
-- **Actuation** — The torque command drives the reaction wheel motor; the
-  resulting change in wheel angular momentum applies an equal and opposite
-  reaction torque to the body, per conservation of angular momentum.
+- **Sensing** — An MPU6050 (accelerometer + gyroscope) is fused with a
+  complementary filter into `theta` (pivot tilt angle) and `thetaDot` (tilt
+  rate). Gyro bias is auto-calibrated at boot. Which raw IMU axis maps to
+  "up" versus "pivot," and their signs, is configured in `Config.h` rather
+  than hardcoded, since the IMU's silkscreen axes don't line up with the
+  robot's axes once mounted — a remount only needs a config edit, not a code
+  change.
+- **Actuation (SimpleFOC)** — The AS5600 magnetic encoder gives shaft angle
+  for both FOC commutation and wheel-speed feedback. The 2804 gimbal motor
+  runs in SimpleFOC's voltage torque mode: gimbal motors' winding resistance
+  dominates over inductance at these speeds, so commanded voltage tracks
+  torque well without current sensing.
+- **Control (ESP32, C++)** — A single state-feedback law runs every loop:
+  `u = -(Kp*theta + Kd*theta_dot + Kw*wheel_velocity)`, with `u` (volts)
+  handed straight to the motor. The controller arms itself automatically
+  once the body has been held near-vertical for a short settle time, and
+  disarms if it tips past a fall threshold.
 
 ## Implementation Details
 
-The control loop runs on a hardware timer interrupt on the STM32 to guarantee a
-consistent sample rate, since PID gains tuned at one control rate don't transfer
-cleanly to another. IMU readings are fused with a complementary filter rather
-than a full Kalman filter — simpler to implement and tune on embedded hardware,
-and sufficient given the IMU noise characteristics observed on this platform.
+The `Kw` (wheel-speed) term exists because a reaction wheel only _exchanges_
+angular momentum with the body — it can't dissipate it. At zero tilt the
+wheel can sit at any constant speed with zero motor torque, so without
+feedback on wheel speed, any small disturbance causes the wheel to slowly
+accelerate until it saturates. `Kw*wheel_velocity` feeds back a small
+counter-torque proportional to wheel speed, desaturating it at the cost of a
+slight steady-state tilt — kept an order of magnitude below `Kp`/`Kd` so it
+desaturates the wheel without fighting the angle hold.
 
-Reaction wheel speed is monitored to avoid actuator saturation: if the wheel
-approaches its maximum RPM, it has less headroom left to exchange momentum with
-the body, so the mechanical design biased toward a wheel/motor combination with
-enough headroom for the expected disturbance range.
+Because `u = -Kx` for state `x = [theta, theta_dot, wheel_velocity]` is
+exactly the LQR form, gains can be hand-tuned live over serial (`p<Kp>`,
+`d<Kd>`, `w<Kw>`, `t<trimDeg>`) or solved for by linearizing the body+wheel
+system about vertical and running `control.lqr()` in Python — same firmware,
+just a different way to arrive at `K`.
+
+Reliability turned out to need as much attention as control: the firmware
+runs a hardware watchdog that reboots the MCU (and de-energizes the driver)
+if the main loop ever stalls, so a freeze is bounded instead of requiring a
+manual reset. Decoding crash addresses against the actual build (`addr2line`
+against `firmware.elf`) surfaced two distinct real causes rather than one —
+blocking `Serial` writes when nothing drains the USB buffer, and a genuine
+I2C-driver-level lockup below where `Wire.setTimeOut()` can catch it. The
+watchdog is what actually recovers from the second one.
 
 ## Challenges
 
 Getting the complementary filter's tuning right — balancing responsiveness to
-fast tilt changes against susceptibility to accelerometer noise — took several
-iterations. PID tuning was similarly iterative: gains that looked stable in a
-bench test would sometimes oscillate once the full chassis mass and center of
-gravity were accounted for, requiring re-tuning with the real hardware rather
-than an idealized model.
+fast tilt changes against susceptibility to accelerometer noise — took
+several iterations. Confirming sign conventions was its own source of bugs:
+angle sign (does `theta` grow in the direction you're tipping?) and motor
+direction (does the wheel spin to correct a tip, or accelerate it?) are two
+independent signs, and conflating them looks identical to a stranger but
+needs different config fields fixed. Isolating the I2C lockup similarly
+needed a controlled experiment — a debug flag to poll only the IMU or only
+the encoder — to tell whether the fault tracked to one sensor's bus traffic
+rather than motor EMI.
 
 ## Results
 
-<Figure label="Balancing test video" kind="video" caption="The triangle recovering from a manual push disturbance and re-stabilizing." />
+<Figure
+  label="Balancing demo"
+  kind="video"
+  caption="The triangle holding balance on one edge via reaction-wheel momentum exchange."
+  src="/images/projects/balancing-triangle/balance-demo.gif"
+/>
 
-The final system reliably self-balances from a near-vertical starting position
-and rejects moderate manual disturbances (a light push) without falling,
-demonstrating stable closed-loop control purely through reaction-wheel momentum
-exchange.
+The final system reliably self-balances from a near-vertical starting
+position and rejects moderate manual disturbances (a light push) without
+falling, demonstrating stable closed-loop control purely through
+reaction-wheel momentum exchange, while keeping the wheel itself from
+creeping toward saturation.
 
 ## Lessons Learned
 
 Tuning a real embedded control loop is a different exercise from tuning a
-simulated one — sensor noise, actuator saturation, and timing jitter all show up
-in ways that are easy to abstract away in simulation. Building the mechanical
-platform with generous reaction-wheel headroom made the control problem
-meaningfully easier than a tightly-constrained design would have.
+simulated one — sensor noise, actuator saturation, and timing jitter all show
+up in ways that are easy to abstract away in simulation. Building the
+mechanical platform with generous reaction-wheel headroom made the control
+problem meaningfully easier than a tightly-constrained design would have. And
+the two crash causes were a reminder that "it randomly freezes" is rarely one
+bug — decoding the actual fault address split it into two unrelated problems
+with two unrelated fixes.
 
 ## Future Work
 

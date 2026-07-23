@@ -7,7 +7,7 @@ featured: true
 order: 4
 year: "2025"
 diagram: "circuit"
-links: {}
+links: { github: "https://github.com/vcampos4545/mulligan-ai" }
 ---
 
 ## Overview
@@ -19,7 +19,11 @@ time or expertise to write a strong appeal letter. Mulligan AI streamlines that
 process end to end: upload a denial document, and the platform extracts the
 relevant details and drafts a supporting appeal.
 
-<Figure label="Application screenshot" kind="image" caption="Denial document upload and AI-generated appeal draft workflow." />
+<Figure
+  label="Application screenshot"
+  kind="image"
+  caption="Denial document upload and AI-generated appeal draft workflow."
+/>
 
 ## Problem
 
@@ -39,7 +43,11 @@ providers. The platform needed to:
 
 ## Technical Architecture
 
-<Figure label="System architecture" kind="diagram" caption="Document ingestion, LLM processing pipeline, and application layers." />
+<Figure
+  label="System architecture"
+  kind="diagram"
+  caption="Document ingestion, LLM processing pipeline, and application layers."
+/>
 
 - **Frontend (Next.js/React)** — The document upload, review, and appeal-editing
   interface, built as a standard Next.js application for fast iteration and
@@ -55,7 +63,11 @@ providers. The platform needed to:
 
 ## Implementation Details
 
-<Figure label="Data pipeline" kind="diagram" caption="From raw document upload to structured extraction to generated appeal." />
+<Figure
+  label="Data pipeline"
+  kind="diagram"
+  caption="From raw document upload to structured extraction to generated appeal."
+/>
 
 The processing pipeline is intentionally staged rather than a single end-to-end
 prompt: documents are first parsed into structured fields (denial reason, dates,

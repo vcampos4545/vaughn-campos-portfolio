@@ -84,3 +84,12 @@ images out of the box too.
 Adding a new project is just adding a new `.mdx` file to `content/projects/` — no code
 changes required. It will automatically appear on `/projects` and (if `featured: true`)
 on the home page.
+
+## Before you deploy — placeholders to replace
+
+- **Per-project `links`** — each MDX file's frontmatter has an empty `links: {}`.
+  Fill in `github` / `demo` / `video` as those repos/demos go live.
+- **`lib/site.ts` → `url`** — set to your real production domain before relying on the
+  generated `sitemap.xml`, `robots.txt`, or OpenGraph metadata.
+- **Media placeholders** — the `<Figure />` blocks and card artwork are intentional
+  placeholders ("media pending") until real screenshots/diagrams/videos are ready.

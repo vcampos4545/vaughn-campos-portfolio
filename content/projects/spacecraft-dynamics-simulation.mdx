@@ -1,99 +1,178 @@
 ---
 title: "Spacecraft Dynamics Simulation"
-description: "Real-time spacecraft physics simulator built with C++ and OpenGL."
-tags: ["C++", "OpenGL", "Physics Simulation", "Quaternion Mathematics", "Control Systems"]
+description: "A lightweight C++ rigid-body physics library with a composable joint system, built around spacecraft example scenarios."
+tags:
+  [
+    "C++",
+    "Rigid Body Dynamics",
+    "Constraint Solvers",
+    "Quaternion Mathematics",
+    "CMake",
+    "Control Systems",
+  ]
 status: "completed"
 featured: true
 order: 2
 year: "2024"
-diagram: "orbit"
-links: {}
+diagram: "grid"
+links: { github: "https://github.com/vcampos4545/spacecraft-dynamics-sim" }
 ---
 
 ## Overview
 
-A spacecraft simulator modeling orbital dynamics, attitude propagation, and
-spacecraft control, rendered in real time with a custom OpenGL viewer. The goal
-was to build a from-scratch environment for experimenting with attitude control
-concepts — rather than treating the physics engine as a black box, every piece
-from quaternion propagation to torque application is implemented and inspectable.
+A general-purpose rigid-body physics library in C++, built around a small set of
+composable joint primitives and a from-scratch collision/constraint solver, with
+spacecraft scenarios layered on top as examples rather than baked into the
+engine. The physics core (`rigidbody`) has no idea what a "spacecraft" is, what
+gravity should do, or how flight software should behave — it only knows about
+rigid bodies, actuators, and constraints. Everything spacecraft-specific — a
+1U cubesat's attitude-control stack, a multi-body Falcon 9 with stageable
+joints, deployable solar panels — lives in example scenarios that consume the
+library the way real flight software consumes a physics engine: define the
+vehicle, then read sensors and command actuators every tick.
 
-<Figure label="3D spacecraft rendering" kind="image" caption="Real-time OpenGL render of the spacecraft with body-frame axes overlaid." />
+<Figure
+  label="Constraint system"
+  kind="diagram"
+  caption="Four joint primitives (weld, ball-socket, hinge, slider) built from shared solver building blocks, plus a rope/string constraint."
+/>
 
 ## Problem
 
-Attitude dynamics are easy to get subtly wrong: naive Euler-angle integration
-introduces gimbal lock, and small numerical errors in quaternion propagation
-compound over long simulation runs. At the same time, a physics simulation that
-isn't visualized in real time is hard to build intuition from — numbers on a
-plot don't reveal whether a controller is over-damped, oscillating, or
-correctly rejecting disturbance torques.
+The project started as a single monolithic spacecraft simulator: orbital
+mechanics, attitude propagation, and a fixed flight-software stack all
+compiled into one engine. That worked for the original goal — experimenting
+with attitude controllers — but it didn't generalize: the physics core and
+the spacecraft-specific code were tangled together, so reusing the engine for
+anything else meant fighting assumptions baked in from day one. The joint
+system was similarly minimal, just an ad hoc fixed joint and a rope
+constraint, with no shared structure between them.
 
-The project needed:
+Turning it into something reusable meant:
 
-- Numerically stable, singularity-free attitude representation and propagation
-- A real-time 3D viewer to visually verify simulated behavior as it runs
-- A control layer that could be swapped and tuned without touching the physics core
+- Separating the physics engine from spacecraft-specific gravity models and
+  flight software entirely, so it could simulate *any* rigid body, not just
+  a satellite
+- Replacing the one-off joints with a small, standard set of constraint
+  primitives (weld, ball-socket, hinge, slider) that share their underlying
+  math instead of duplicating it
+- A way to validate constraint behavior precisely, rather than eyeballing it
+  in the viewer
 
 ## Technical Architecture
 
-<Figure label="Physics architecture" kind="diagram" caption="Simulation loop: state propagation, control law, torque application, and rendering." />
+<Figure
+  label="Library / example split"
+  kind="diagram"
+  caption="rigidbody (physics only, no rendering dependency) vs. examples/ (spacecraft, flight software, VGL rendering)."
+/>
 
-The simulator is organized around a fixed-timestep physics loop:
+The project is now split into a physics library and a set of examples that
+consume it:
 
-- **Rigid-body state** — Position/velocity in the orbital frame, attitude as a
-  unit quaternion, and angular velocity in the body frame.
-- **Dynamics core (C++)** — Numerical integration (RK4) of translational and
-  rotational equations of motion, with quaternion normalization each step to
-  prevent drift.
-- **Control layer** — A pluggable controller interface so different attitude
-  control strategies can be swapped in without modifying the propagation code.
-- **Renderer (OpenGL)** — A real-time 3D view of the spacecraft body, reference
-  frames, and torque vectors, decoupled from the physics timestep so the
-  simulation remains numerically stable independent of frame rate.
+- **`rigidbody` (the library)** — `RigidBody` (box/sphere/cylinder/cone,
+  mass/inertia from density or mass, GJK+EPA convex collision), `PhysicsWorld`
+  (fixed-timestep Sequential-Impulse solver, 120 Hz), and a constraint system:
+  `FixedConstraint`, `PointConstraint`, `HingeConstraint`, and
+  `SliderConstraint` each remove a specific, documented set of the 6 relative
+  degrees of freedom between two bodies, built from shared solver blocks
+  (point-lock, orientation-lock, axis-alignment, perpendicular-lock) so a new
+  joint is an assembly of existing pieces, not a rewrite. A `DistanceConstraint`
+  (rope/string, held at a target distance rather than coincident) sits
+  alongside them for the one case the other four can't express. Actuators
+  (`ReactionWheel`, gimbaled `Thruster`) are physical primitives attached to a
+  body, independent of any specific vehicle. The library has zero rendering
+  dependency and builds standalone via CMake `FetchContent`/`add_subdirectory`.
+- **Examples** — six self-contained scenarios (rendered with a small custom
+  OpenGL layer, [VGL](https://github.com/vcampos4545/VGL)) that each define a
+  vehicle from the library's primitives and write their own scenario-specific
+  flight software: a cubesat with a full PID/LQR/cascaded attitude-control
+  stack, a multi-body Falcon 9 (cylinder + nose cone + 4 legs welded together,
+  with in-flight staging), a Calder mobile, two independently deployable
+  solar panels, a rigid chain, and a telescoping antenna boom.
 
 ## Implementation Details
 
-Attitude is represented entirely with quaternions to avoid gimbal lock, with
-kinematics integrated via the standard quaternion derivative equation
-(`q_dot = 0.5 * q ⊗ ω`) and renormalized after each integration step to counteract
-floating-point drift. Angular velocity dynamics use Euler's rigid-body equation,
-accounting for the spacecraft's inertia tensor and any applied control or
-disturbance torques.
+Collision between arbitrary convex shapes runs through GJK for intersection
+and EPA for contact resolution, feeding a Sequential-Impulse solver with
+Baumgarte position-error correction shared across every constraint type.
+Attitude is represented with quaternions throughout, renormalized after each
+integration step to prevent drift, with Euler's rigid-body equation driving
+angular dynamics under applied and disturbance torques.
 
-The renderer runs independently of the physics timestep: physics is integrated
-at a fixed rate for numerical stability, while rendering interpolates the most
-recent state for smooth visual output regardless of display refresh rate.
+The cubesat example's flight software is a small, literal pipeline —
+guidance (compute a target attitude) → control (PID, LQR, or cascaded
+rate/attitude, selectable at runtime) → actuator allocation (torque command
+to individual reaction-wheel commands via the wheel configuration's
+pseudo-inverse) → command — all owned by the example, not the engine, so
+swapping controllers never touches physics code.
 
 ## Challenges
 
-Keeping the physics timestep decoupled from render timing, without introducing
-visible stutter or drift between the two, required care around how state was
-interpolated for display. On the control side, tuning a controller by staring at
-plots alone was slow — being able to watch the spacecraft body physically
-respond to a step disturbance in the OpenGL view made controller tuning far more
-intuitive and fast.
+The most instructive bug wasn't in the new constraint math — it was a latent
+issue the constraint refactor exposed. A welded rocket nose cone stopped
+rigidly tracking the rocket body under thrust; instead of holding orientation,
+it visibly spun away from the rocket over a few seconds. The instinctive
+suspect was Baumgarte overcorrection (a too-aggressive position-error gain
+overshooting and oscillating), so I clamped the correction term — and the
+bug didn't change at all, bit-for-bit identical across a 5-second reproduction.
+
+That ruled out my first theory immediately, which was the point of building a
+*headless* reproduction: a small standalone program with the exact rocket and
+nose-cone masses, no GUI, printing orientation state every physics step. It
+let me test hypotheses in seconds instead of staring at a render trying to
+eyeball a divergence, and it caught that a `beta = 0` run (no position
+correction at all) produced the *same* divergence — meaning the bug wasn't in
+the Baumgarte term at all. Instrumenting the solver directly then showed the
+real cause: a Cramer's-rule linear solve used an absolute numerical
+singularity threshold (`|determinant| < 1e-10`). A 549-tonne rocket's inverse
+inertia is naturally tiny in SI units, so the rotational constraint's
+determinant fell under that threshold even though the matrix was perfectly
+well-conditioned — the rotational correction was silently returning zero,
+every single step, for that one specific mass scale. The translational half
+kept working, and its lever-arm coupling term kept injecting a small,
+completely unopposed angular velocity into the cone every frame. Nothing
+crashed; nothing errored. It just quietly did nothing, and only at spacecraft
+scale.
 
 ## Results
 
-<Figure label="Controller step response" kind="graph" caption="Attitude error convergence following a step disturbance, before and after tuning." />
+Making the singularity check scale-relative instead of absolute fixed it: the
+same reproduction now holds the nose cone's orientation to the rocket's within
+~0.001° under the same sustained torque that previously diverged past 180° in
+under 5 seconds. Each constraint primitive — weld, ball-socket, hinge, slider,
+rope — has its own targeted headless test (a pendulum's arm length holding
+constant while swinging freely, a piston sliding with zero lateral drift, a
+hinge settling exactly at its limit) that ran clean both before and after the
+fix, confirming the change was surgical rather than incidentally fixing one
+thing and breaking another.
 
-The simulator correctly propagates rigid-body attitude dynamics over long runs
-without quaternion drift, and the real-time viewer made it straightforward to
-visually confirm controller behavior — settling time, overshoot, and steady-state
-error — that would otherwise require careful plot inspection.
+<Figure
+  label="Constraint validation"
+  kind="graph"
+  caption="Relative orientation error between welded bodies over time, before and after the scale-relative singularity fix."
+/>
 
 ## Lessons Learned
 
-Visualizing physics in real time surfaces bugs that plots hide. Several early
-issues (a sign error in torque application, an incorrectly transposed rotation)
-were obvious within seconds of watching the spacecraft body behave
-unrealistically, but would have taken much longer to catch from time-series
-plots alone.
+Debugging physics by watching a render is slow and ambiguous — "it looks
+wrong" isn't falsifiable. A headless harness that just prints numbers turned
+a vague visual symptom into a precise measurement, and let me disprove a
+plausible first hypothesis in minutes instead of chasing it for an afternoon.
+Numerical thresholds that look reasonable at one scale can fail silently at
+another: an epsilon tuned against small test bodies didn't error or crash at
+spacecraft scale, it just quietly stopped doing its job, which is a much
+easier bug to miss than one that's loud. And building the constraint system
+out of small, shared, independently-testable solver blocks paid for itself
+immediately — the fix and the validation both applied uniformly across every
+joint type built from that code, not just the one that surfaced the bug.
 
 ## Future Work
 
-- Add flexible-body dynamics (solar array/appendage flexibility)
-- Model reaction wheel and thruster actuator dynamics explicitly, rather than
-  applying idealized torques
-- Extend the control layer to support a full GNC pipeline (guidance + navigation + control)
+- Broad-phase collision (current body-body detection is O(n²))
+- Analytic sphere-box and box-box collision (general shapes currently rely on
+  GJK/EPA only)
+- Sensor and estimation models — current flight-software examples read
+  ground-truth body state directly rather than through a simulated sensor
+- Propellant mass depletion for thrusters, so a vehicle's mass/inertia change
+  over a burn instead of staying fixed

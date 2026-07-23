@@ -7,7 +7,7 @@ featured: true
 order: 1
 year: "2024"
 diagram: "orbit"
-links: {}
+links: { github: "https://github.com/vcampos4545/ConstellationSim" }
 ---
 
 ## Overview
@@ -18,7 +18,11 @@ orbital constraints. The goal was to make constellation architecture tradeoffs
 tangible: instead of hand-deriving coverage geometry for each candidate design,
 the simulator sweeps a parameter space and reports the tradeoffs directly.
 
-<Figure label="Constellation visualization" kind="diagram" caption="Walker-pattern constellation rendered over a rotating Earth model." />
+<Figure
+  label="Constellation visualization"
+  kind="diagram"
+  caption="Walker-pattern constellation rendered over a rotating Earth model."
+/>
 
 ## Problem
 
@@ -38,7 +42,11 @@ The project needed a framework that could:
 
 ## Technical Architecture
 
-<Figure label="System architecture" kind="diagram" caption="Simulation core, orbit propagation, and analysis/reporting layers." />
+<Figure
+  label="System architecture"
+  kind="diagram"
+  caption="Simulation core, orbit propagation, and analysis/reporting layers."
+/>
 
 The simulator is split into three layers:
 
@@ -84,8 +92,16 @@ technical and non-technical reviewers.
 
 ## Results
 
-<Figure label="Coverage vs. altitude sweep" kind="graph" caption="Global coverage percentage across a swept altitude range for a fixed satellite count." />
-<Figure label="Revisit time distribution" kind="graph" caption="Revisit-time statistics for a candidate constellation design." />
+<Figure
+  label="Coverage vs. altitude sweep"
+  kind="graph"
+  caption="Global coverage percentage across a swept altitude range for a fixed satellite count."
+/>
+<Figure
+  label="Revisit time distribution"
+  kind="graph"
+  caption="Revisit-time statistics for a candidate constellation design."
+/>
 
 The framework successfully reproduced expected coverage trends (e.g., diminishing
 coverage returns per added satellite at a fixed altitude) and made it possible to
