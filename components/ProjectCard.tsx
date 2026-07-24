@@ -11,7 +11,12 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
 
   const card = (
     <div className="group flex h-full flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-border-strong">
-      <ProjectVisual code={code} title={project.title} diagram={project.diagram} />
+      <ProjectVisual
+        code={code}
+        title={project.title}
+        diagram={project.diagram}
+        heroImage={project.heroImage || undefined}
+      />
 
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex items-start justify-between gap-3">

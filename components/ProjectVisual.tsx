@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 const DIAGRAMS = {
   orbit: (
     <>
@@ -39,26 +41,43 @@ export function ProjectVisual({
   code,
   title,
   diagram = "grid",
+  heroImage,
   className = "",
 }: {
   code: string;
   title: string;
   diagram?: keyof typeof DIAGRAMS | "grid";
+  heroImage?: string;
   className?: string;
 }) {
   return (
     <div
       className={`bracket-corners relative aspect-video w-full overflow-hidden border border-border bg-background-elevated ${className}`}
     >
-      <div className="grid-paper absolute inset-0 h-full opacity-60" />
-      {diagram !== "grid" && (
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 h-full w-full text-muted-2/70"
-        >
-          {DIAGRAMS[diagram]}
-        </svg>
+      {heroImage ? (
+        <>
+          <Image
+            src={heroImage}
+            alt={title}
+            fill
+            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/20" />
+        </>
+      ) : (
+        <>
+          <div className="grid-paper absolute inset-0 h-full opacity-60" />
+          {diagram !== "grid" && (
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              className="absolute inset-0 h-full w-full text-muted-2/70"
+            >
+              {DIAGRAMS[diagram]}
+            </svg>
+          )}
+        </>
       )}
       <div className="absolute left-3 top-3 font-mono text-[10px] uppercase tracking-widest text-muted-2">
         Fig. {code}
@@ -67,7 +86,9 @@ export function ProjectVisual({
         <span className="font-mono text-[11px] uppercase tracking-widest text-muted">
           {title}
         </span>
-        <span className="font-mono text-[10px] text-muted-2">image pending</span>
+        {!heroImage && (
+          <span className="font-mono text-[10px] text-muted-2">image pending</span>
+        )}
       </div>
     </div>
   );
