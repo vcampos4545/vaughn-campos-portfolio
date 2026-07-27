@@ -5,21 +5,19 @@ tags: ["Swift", "iOS", "LiveKit", "WebRTC", "AWS", "Supabase", "Next.js"]
 status: "completed"
 featured: true
 order: 1
-year: "2023 – 2025"
+year: "2023 to 2025"
 diagram: "wave"
-links:
-  {
-    demo: "https://jellyjelly.com",
-  }
+heroImage: "/images/projects/jellyjelly.png"
+links: { demo: "https://jellyjelly.com" }
 ---
 
 ## Overview
 
-Jelly Jelly is a real-time video streaming app, built during my two years as a
-Full Stack Software Engineer at SmallTalk. I worked across the entire stack —
-a native iOS app, the backing cloud infrastructure, and the real-time video
-pipeline connecting them — taking the product from early development through
-a public App Store release.
+Jelly Jelly is a real-time video streaming app, built during my two years as
+a Full Stack Software Engineer at SmallTalk. I worked across the entire
+stack: a native iOS app, the backing cloud infrastructure, and the real-time
+video pipeline connecting them, taking the product from early development
+through a public App Store release.
 
 <Figure
   label="Jelly Jelly app"
@@ -29,29 +27,29 @@ a public App Store release.
 
 ## Technical Architecture
 
-- **Real-time video pipeline** — Built on LiveKit's WebRTC infrastructure,
+- **Real-time video pipeline.** Built on LiveKit's WebRTC infrastructure,
   handling low-latency media transport, multi-client synchronization, and
-  event-driven state management shared across the web and mobile clients.
-- **iOS app (Swift)** — Developed end-to-end and shipped to the App Store,
+  event-driven state management shared across web and mobile.
+- **iOS app (Swift).** Developed end-to-end and shipped to the App Store,
   including concurrent background processing and direct hardware camera
   integration for streaming.
-- **Cloud infrastructure (AWS)** — S3, Lambda, and EC2, with automated CI/CD
+- **Cloud infrastructure (AWS).** S3, Lambda, and EC2, with automated CI/CD
   deployment for the backend services.
-- **Data layer (Supabase/Postgres)** — Real-time data synchronization for live
+- **Data layer (Supabase/Postgres).** Real-time data synchronization for live
   app state, backed by PostgreSQL for analytics.
 
 ## Implementation Details
 
-The video pipeline had to keep multiple clients — iOS and web — in sync in
-real time, which meant designing state management around the same
-event-driven model on both platforms rather than treating them as separate
-implementations. On iOS specifically, streaming reliably from the background
-required careful handling of the platform's background execution and camera
-APIs rather than assuming the app always had foreground priority.
+Keeping iOS and web clients in sync in real time meant designing state
+management around the same event-driven model on both platforms, rather than
+treating them as separate implementations. On iOS, streaming reliably from
+the background also required careful handling of the platform's background
+execution and camera APIs, rather than assuming the app always had
+foreground priority.
 
 ## Results
 
 Shipped a production iOS app to the App Store and a companion web platform,
-both built on a shared real-time video infrastructure, over roughly two years
-as the engineer responsible for the full stack — mobile client, web client,
+both built on shared real-time video infrastructure, over roughly two years
+as the engineer responsible for the full stack: mobile client, web client,
 and cloud backend.
