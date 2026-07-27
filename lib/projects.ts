@@ -8,6 +8,7 @@ export interface ProjectLinks {
   github?: string;
   demo?: string;
   video?: string;
+  appstore?: string;
 }
 
 export interface ProjectFrontmatter {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
-import { ArrowLeft, SquareCode, ExternalLink, PlayCircle } from "lucide-react";
+import { ArrowLeft, SquareCode, ExternalLink, PlayCircle, Smartphone } from "lucide-react";
 import { getAllProjectSlugs, getProjectBySlug } from "@/lib/projects";
 import { mdxComponents } from "@/components/mdx-components";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -72,7 +72,11 @@ export default async function ProjectPage({
           ))}
         </div>
 
-        {project.links && (project.links.github || project.links.demo || project.links.video) && (
+        {project.links &&
+          (project.links.github ||
+            project.links.demo ||
+            project.links.video ||
+            project.links.appstore) && (
           <div className="mt-8 flex flex-wrap gap-3">
             {project.links.github && (
               <a
@@ -105,6 +109,17 @@ export default async function ProjectPage({
               >
                 <PlayCircle size={14} />
                 Video
+              </a>
+            )}
+            {project.links.appstore && (
+              <a
+                href={project.links.appstore}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-md border border-border-strong px-4 py-2 font-mono text-xs uppercase tracking-widest text-foreground transition-colors hover:border-accent hover:text-accent"
+              >
+                <Smartphone size={14} />
+                App Store
               </a>
             )}
           </div>

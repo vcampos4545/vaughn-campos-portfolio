@@ -1,0 +1,182 @@
+---
+title: "VGL"
+description: "A from-scratch C++/OpenGL 2D+3D rendering engine — a faster, more customizable alternative to pygame — with batched primitive rendering, GPU scalar-field visualization, and a configurable lighting model."
+tags:
+  [
+    "C++",
+    "OpenGL",
+    "GLSL",
+    "Computer Graphics",
+    "GLFW",
+    "CMake",
+    "Real-Time Rendering",
+  ]
+status: "active"
+featured: true
+order: 7
+year: "2026"
+diagram: "grid"
+links: { github: "https://github.com/vcampos4545/VGL" }
+---
+
+## Overview
+
+VGL is a rendering engine built directly on OpenGL and GLSL — an attempt to
+recreate what pygame gives you (a simple, immediate-mode draw API: circles,
+rects, lines, sprites, an event loop) but backed by a compiled language and
+the GPU instead of pygame's CPU-bound software blitting. It's split into two
+faces on a shared `GUI` window/input/context layer: a 3D immediate-mode API
+(spheres, boxes, cylinders, OBJ meshes, an orbital camera) and a 2D API
+purpose-built for CFD-style scientific visualization (batched
+lines/points/polygons plus GPU colormap rendering of scalar fields). It's
+the rendering layer under a separate
+[rigid-body physics project](/projects/spacecraft-dynamics-simulation)'s six
+example scenarios, and standalone for 2D flow-field visualization.
+
+<Figure
+  label="Renderer architecture"
+  kind="diagram"
+  caption="Shared GUI (window/input/GL context) with a 3D immediate-mode API and a 2D batched/GPU-colormap API on top."
+/>
+
+## Problem
+
+pygame is a reasonable default for quick 2D visualization, but it's
+software-rendered and CPU-bound: every primitive is blitted on the CPU, so
+frame time scales directly with how much you draw, and there's no path to
+the GPU for anything — no shaders, no instancing, no hardware colormap
+rendering of a scalar field. For CFD-style visualization work — thousands of
+particles, dense line fields, per-cell scalar data — that ceiling shows up
+fast. Building on raw OpenGL instead meant solving the problems pygame
+solves for you (windowing, input, an immediate-mode-feeling draw API) while
+keeping every draw call GPU-driven:
+
+- A 2D primitive API that reads like pygame's (`drawLine`, `drawCircle`,
+  `addPoint`) but batches everything into as few draw calls as possible
+  instead of one draw call per primitive
+- GPU-resident scalar-field rendering (velocity/pressure/vorticity fields as
+  a texture, colormapped in a fragment shader) rather than reading data back
+  to the CPU to draw it
+- A 3D side (meshes, materials, lighting, OBJ import) for physics-sim
+  visualization, sharing the same window/input/camera plumbing as the 2D API
+- Keeping the whole thing dependency-light (GLFW + GLM + GLEW + stb_image)
+  and buildable as a plain CMake static library
+
+## Technical Architecture
+
+<Figure
+  label="2D batching pipeline"
+  kind="diagram"
+  caption="LineBatch2D / PointBatch2D accumulate primitives per frame into a growable GPU buffer, drawn in one glDrawArrays/glDrawElementsInstanced call each."
+/>
+
+- **`GUI`** — owns the GLFW window, GL context, keyboard/mouse state, and the
+  3D immediate-mode draw API (`drawSphere`, `drawBox`, `drawCylinder`,
+  `drawOBJMesh`, an infinite ray-cast ground plane, a logarithmic depth
+  buffer for scenes spanning huge distances — orbital mechanics is what it
+  was built for).
+- **`Renderer2D`** — a façade over `GUI` adding an orthographic `Camera2D`
+  and the 2D API: `LineBatch2D` and `PointBatch2D` accumulate every
+  `drawLine`/`addPoint` call for a frame into a CPU-side vector, then upload
+  once and issue a single `GL_LINES` draw / one `glDrawElementsInstanced`
+  call for all points (a shared unit-circle mesh instanced per point via
+  `glVertexAttribDivisor`) — thousands of primitives, one or two draw calls.
+- **`DataTexture` + colormap shader** — scalar field data (e.g. a CFD
+  pressure or vorticity grid) uploads straight into an `R32F`/`RG32F`
+  texture; a fragment shader maps it through a colormap (Viridis, Jet,
+  CoolWarm, Grayscale, Fire) entirely on the GPU, with optional contour
+  lines and a solid-mask overlay for obstacles — no per-pixel CPU work.
+- **`Mesh` / `OBJMesh`** — procedural primitive generators (circle, quad,
+  cube, sphere, cylinder) plus a `.obj`/`.mtl` loader that triangulates
+  n-gon faces and groups submeshes by material.
+- **`Framebuffer`** — render-to-texture for post-processing / offscreen
+  passes, generalized to a single reusable class across float and
+  8-bit-per-channel targets.
+
+## Implementation Details
+
+Two performance issues came up while extending the engine and are worth
+noting because neither would show up in a quick correctness check — both
+only cost anything once a scene draws a lot per frame:
+
+**Uniform lookups on every `set*` call.** `Shader::setMat4`/`setFloat`/etc.
+were calling `glGetUniformLocation(id, name)` — a driver-side string
+lookup — on every single call, every frame, for every draw. Fixed with a
+`name → GLint` cache on `Shader`, invalidated on program relink; every
+uniform name now resolves once per program's lifetime instead of once per
+frame.
+
+**GPU object churn in immediate-mode line drawing.** `GUI::drawLine`/
+`drawArrow` route through a `Mesh::uploadLines()` call that was destroying
+and recreating the VAO/VBO from scratch on *every single line drawn* —
+fine for one debug line, expensive for a frame full of vector-field arrows.
+Rewritten to match the pattern already used by `LineBatch2D`/`PointBatch2D`:
+allocate once, grow the buffer with headroom (`+50%`) only when a frame
+needs more capacity than it already has, and `glBufferSubData` into the
+existing allocation otherwise.
+
+## Challenges
+
+The most instructive bug wasn't a crash, it was "why does every 3D scene
+look almost black except directly facing the light." The fragment shader
+had a single hardcoded `ambient = 0.15` constant and one directional
+light — any face angled away from that one light dropped to 15% brightness
+with nothing to fill it in, and there was no way to configure it beyond
+rotating the light direction. Worse, `OBJMesh` was already parsing
+`Ka`/`Ks`/`Ns` (ambient/specular/shininess) out of `.mtl` files into a
+`Material` struct — the data was there, the shader just never read it,
+so every object got the same fixed `32.0` shininess and `0.3` specular
+regardless of what its material actually specified.
+
+The fix was two-part: replace the flat ambient constant with a hemisphere
+ambient (a sky color and a ground color, blended by how much a surface
+normal faces up) so backfaces pick up a believable fill instead of going
+flat dark, and thread the already-parsed `Material` (ambient/specular/
+shininess, now correctly used as OBJ/MTL-convention *multipliers* on the
+scene light rather than standalone values) into the shader as real
+per-object uniforms — plus a `lit` flag so any object can opt out of
+lighting entirely for a flat-shaded look. Getting from "the light direction
+must be wrong" to "the ambient model itself has no fill term" was the part
+that actually took investigation; once diagnosed, the shader and API
+changes were mechanical.
+
+## Results
+
+<Figure
+  label="Lighting before/after"
+  kind="image"
+  caption="Flat single-directional-light ambient (left) versus hemisphere ambient with per-object material reflectivity (right)."
+/>
+
+The engine now renders both the 3D physics-sim scenes and the 2D CFD-style
+visualizations through the same window/input layer, with every hot path
+(2D primitive batching, point instancing, uniform lookups, immediate-mode
+line buffers) doing O(changed data) work per frame rather than O(driver
+calls) or O(primitives × redundant lookups). Lighting is now configurable
+per-scene (light color/intensity/direction, ambient sky/ground colors) and
+per-object (reflectivity, shininess, lit/unlit), with `.mtl`-authored
+materials actually affecting the render instead of being parsed and
+discarded.
+
+## Lessons Learned
+
+Batching and GPU-buffer-reuse patterns are easy to get right once, in one
+place, and then easy to forget to apply everywhere else that looks
+superficially similar — `LineBatch2D` had the right growable-buffer pattern
+from the start, but a separate, older immediate-mode line path in `GUI`
+didn't, because it predated the batch renderers and nobody went back to
+reconcile them. And configurability rots quietly: `OBJMesh` gained
+`Material` parsing before the shader had any uniforms to receive it,
+so the data sat unused for a while without any error or warning — the
+kind of gap that only surfaces when someone (in this case, while adding
+per-object lighting) actually reads both sides of the interface at once
+instead of just the side they're currently changing.
+
+## Future Work
+
+- Text rendering (FreeType or stb_truetype) for on-screen debug/UI overlays
+- Frustum culling — every object currently renders regardless of visibility
+- Multiple/shadow-casting lights beyond the current single directional light
+- Migrate GLEW → glad for a more modern, minimal extension loader
+- Split `GUI`'s window/input/render responsibilities into separate classes
+  as the 3D API keeps growing
