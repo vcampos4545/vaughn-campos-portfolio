@@ -19,12 +19,6 @@ disproportionately burden patients and providers who don't have the time or
 expertise to write a strong appeal letter. Upload a denial document, and
 Mulligan AI extracts the relevant details and drafts a supporting appeal.
 
-<Figure
-  label="Application screenshot"
-  kind="image"
-  caption="Denial document upload and AI-generated appeal draft workflow."
-/>
-
 ## Problem
 
 Writing an appeal means synthesizing a denial letter, the underlying medical
@@ -43,12 +37,6 @@ needed to:
 
 ## Technical Architecture
 
-<Figure
-  label="System architecture"
-  kind="diagram"
-  caption="Document ingestion, LLM processing pipeline, and application layers."
-/>
-
 - **Frontend (Next.js/React).** The upload, review, and appeal-editing
   interface, built for fast iteration and a straightforward Vercel deployment.
 - **Data layer (Supabase/Postgres).** User accounts, document metadata, and
@@ -61,12 +49,6 @@ needed to:
   alongside the Supabase-hosted data layer.
 
 ## Implementation Details
-
-<Figure
-  label="Data pipeline"
-  kind="diagram"
-  caption="From raw document upload to structured extraction to generated appeal."
-/>
 
 The pipeline is staged rather than a single end-to-end prompt. Documents are
 parsed into structured fields (denial reason, dates, policy references)
