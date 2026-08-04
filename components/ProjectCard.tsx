@@ -5,7 +5,13 @@ import { ProjectVisual } from "./ProjectVisual";
 import { StatusBadge } from "./StatusBadge";
 import { Tag } from "./Tag";
 
-export function ProjectCard({ project, index }: { project: Project; index: number }) {
+export function ProjectCard({
+  project,
+  index,
+}: {
+  project: Project;
+  index: number;
+}) {
   const isComingSoon = project.status === "coming-soon";
   const code = String(index + 1).padStart(2, "0");
 
@@ -26,7 +32,9 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
           <StatusBadge status={project.status} />
         </div>
 
-        <p className="text-sm leading-relaxed text-muted">{project.description}</p>
+        <p className="text-sm leading-relaxed text-muted">
+          {project.description}
+        </p>
 
         <div className="mt-auto flex flex-wrap gap-1.5 pt-2">
           {project.tags.map((tag) => (
@@ -36,7 +44,7 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
 
         {!isComingSoon && (
           <div className="flex items-center gap-1.5 pt-1 font-mono text-xs uppercase tracking-widest text-accent opacity-0 transition-opacity group-hover:opacity-100">
-            View Case Study
+            View Project
             <ArrowUpRight size={14} />
           </div>
         )}

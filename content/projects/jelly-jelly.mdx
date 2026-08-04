@@ -31,19 +31,3 @@ through a public App Store release.
   deployment for the backend services.
 - **Data layer (Supabase/Postgres).** Real-time data synchronization for live
   app state, backed by PostgreSQL for analytics.
-
-## Implementation Details
-
-Keeping iOS and web clients in sync in real time meant designing state
-management around the same event-driven model on both platforms, rather than
-treating them as separate implementations. On iOS, streaming reliably from
-the background also required careful handling of the platform's background
-execution and camera APIs, rather than assuming the app always had
-foreground priority.
-
-## Results
-
-Shipped a production iOS app to the App Store and a companion web platform,
-both built on shared real-time video infrastructure, over roughly two years
-as the engineer responsible for the full stack: mobile client, web client,
-and cloud backend.

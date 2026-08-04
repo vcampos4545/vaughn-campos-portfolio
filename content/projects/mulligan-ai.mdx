@@ -1,7 +1,7 @@
 ---
 title: "Mulligan AI"
 description: "AI-powered healthcare workflow platform for generating insurance appeals."
-tags: ["Next.js", "React", "Supabase", "Postgres", "AWS", "LLMs"]
+tags: ["Next.js", "Supabase", "AWS", "LLMs", "Vector DB", "RAG"]
 status: "active"
 featured: true
 order: 2
@@ -42,47 +42,37 @@ needed to:
 - **Data layer (Supabase/Postgres).** User accounts, document metadata, and
   generated appeal records, using row-level security to scope data access per
   user.
-- **AI pipeline (LLMs).** Document text extraction feeds an LLM pipeline that
-  identifies denial reason codes and claim details, then drafts an appeal
-  grounded in that extracted context.
+- **RAG pipeline (OpenAI embeddings + Pinecone).** Uploaded documents are
+  chunked, embedded, and stored in a Pinecone vector index scoped per appeal.
+  Generating an appeal runs a retrieval step first: a query built from the
+  denial reason gets embedded and searched against that appeal's chunks, and
+  the closest matches are pulled into the prompt as grounding context.
 - **Infrastructure (AWS).** File storage and background processing run
   alongside the Supabase-hosted data layer.
 
 ## Implementation Details
 
-The pipeline is staged rather than a single end-to-end prompt. Documents are
-parsed into structured fields (denial reason, dates, policy references)
-first, and only then does the generation step draft the appeal, grounded in
-those fields rather than the raw document text. That keeps the generation
-step's context tight and makes failures easier to trace to either extraction
-or drafting.
+Documents are extracted to raw text (PDF, Word, or plain text), then split
+into roughly 1,000-character chunks and embedded with OpenAI's
+`text-embedding-ada-002`. Each chunk is upserted into Pinecone with metadata,
+appeal ID, document type, file name, chunk index, so a query can be scoped to
+one appeal's documents instead of searching across every user's data at
+once. The embedding model outputs 1536 dimensions, but the Pinecone index is
+provisioned at 1024, so every vector gets truncated before storage and every
+query embedding gets truncated the same way before search, keeping the two
+sides consistent.
 
-Postgres row-level security policies scope every query to the authenticated
-user, so access control is enforced at the database layer rather than relying
-on application checks alone.
+Very short documents, denial letters under about 1,000 characters, skip the
+vector store entirely and get passed straight into the prompt. Chunking and
+embedding a single paragraph adds a network round trip without adding
+anything retrieval would find, so the small-document path is a plain
+pass-through instead of forcing everything through the same pipeline.
 
-## Challenges
-
-The central challenge is reliability. An appeal letter with a fabricated
-detail is worse than no appeal at all in a healthcare context. Grounding
-generation in explicitly extracted fields, rather than free-form summarization
-of the source document, was the main mitigation. Surfacing those fields to
-the user for review before an appeal is finalized keeps a human in the loop
-instead of running the system fully autonomously.
-
-Working with healthcare-adjacent documents also raised the bar on data
-handling across the stack: storage, access control, and logging all needed
-more care than a typical CRUD app.
-
-## Results
-
-The platform takes a user from an uploaded denial document to a reviewed,
-ready-to-submit appeal draft in one guided workflow, replacing what would
-otherwise be manual document review and writing.
-
-## Lessons Learned
-
-Splitting the LLM pipeline into extraction and generation stages, with a
-human review checkpoint in between, produced much more trustworthy output
-than a single end-to-end generation step, and made failures far easier to
-diagnose.
+At generation time, the denial reason forms a search query, gets embedded,
+and is matched against Pinecone with a metadata filter on `appealId`. The
+top results come back as raw text chunks, get stitched into the prompt
+alongside the structured fields already extracted from the denial letter,
+and only then does the model draft the appeal. Retrieval happens before
+generation on every request, so the draft is grounded in whatever was
+actually uploaded for that appeal rather than the model's general knowledge
+of insurance policy language.
