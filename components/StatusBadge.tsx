@@ -1,21 +1,10 @@
 import type { ProjectStatus } from "@/lib/projects";
 
-const STATUS_CONFIG: Record<
-  ProjectStatus,
-  { label: string; dot: string; text: string }
+const STATUS_CONFIG: Partial<
+  Record<ProjectStatus, { label: string; dot: string; text: string }>
 > = {
-  active: {
-    label: "Active",
-    dot: "bg-data",
-    text: "text-data",
-  },
-  completed: {
-    label: "Complete",
-    dot: "bg-accent",
-    text: "text-accent",
-  },
   "coming-soon": {
-    label: "Coming Soon",
+    label: "In Progress",
     dot: "bg-muted-2",
     text: "text-muted",
   },
@@ -23,6 +12,7 @@ const STATUS_CONFIG: Record<
 
 export function StatusBadge({ status }: { status: ProjectStatus }) {
   const config = STATUS_CONFIG[status];
+  if (!config) return null;
 
   return (
     <span
