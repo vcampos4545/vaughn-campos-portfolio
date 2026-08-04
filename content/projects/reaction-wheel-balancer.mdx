@@ -18,6 +18,12 @@ diagram: "triangle"
 heroImage: "/images/projects/balancerCAD.png"
 links:
   { github: "https://github.com/vcampos4545/reaction-wheel-balancer/tree/main" }
+media:
+  [
+    "https://github.com/user-attachments/assets/b2003fc4-73b6-4eda-9392-98f873fcb0b0",
+    "https://github.com/user-attachments/assets/a25d4c56-96c0-489f-b174-5679add349fe",
+    "/images/projects/balancing-triangle/balance-demo.gif",
+  ]
 ---
 
 ## Overview
@@ -29,13 +35,6 @@ shaft encoder, with tilt sensed by an MPU6050. A two-wheeled balancing robot
 balances by driving wheels along the ground. This one balances entirely
 through reaction-wheel angular momentum exchange, closer in spirit to
 spacecraft attitude control than to a conventional wheeled robot.
-
-<Figure
-  label="Hardware photo"
-  kind="image"
-  caption="Assembled triangle chassis with reaction wheel, AS5600/MPU6050 sensors, and ESP32 control board mounted."
-  src="https://github.com/user-attachments/assets/b2003fc4-73b6-4eda-9392-98f873fcb0b0"
-/>
 
 ## Problem
 
@@ -58,19 +57,6 @@ The project needed:
   extended runs, rather than needing a manual reset
 
 ## Technical Architecture
-
-<Figure
-  label="Control block diagram"
-  kind="diagram"
-  caption="Sensor fusion, state-feedback control law, and FOC motor driver stages of the control loop."
-/>
-
-<Figure
-  label="Frame CAD"
-  kind="model"
-  caption="Triangular chassis and reaction-wheel mount, designed for a low, stable center of mass."
-  src="https://github.com/user-attachments/assets/a25d4c56-96c0-489f-b174-5679add349fe"
-/>
 
 - **Sensing.** An MPU6050 (accelerometer and gyroscope) is fused with a
   complementary filter into `theta` (pivot tilt angle) and `thetaDot` (tilt
@@ -128,13 +114,6 @@ experiment: a debug flag to poll only the IMU or only the encoder, to tell
 whether the fault tracked to one sensor's bus traffic rather than motor EMI.
 
 ## Results
-
-<Figure
-  label="Balancing demo"
-  kind="video"
-  caption="The triangle holding balance on one edge via reaction-wheel momentum exchange."
-  src="/images/projects/balancing-triangle/balance-demo.gif"
-/>
 
 The final system reliably self-balances from a near-vertical starting
 position and rejects moderate manual disturbances (a light push) without

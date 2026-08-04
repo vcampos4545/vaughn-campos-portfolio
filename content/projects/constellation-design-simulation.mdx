@@ -19,12 +19,6 @@ constraints. Instead of hand-deriving coverage geometry for every candidate
 design, the simulator sweeps a parameter space and reports the tradeoffs
 directly.
 
-<Figure
-  label="Constellation visualization"
-  kind="diagram"
-  caption="Walker-pattern constellation rendered over a rotating Earth model."
-/>
-
 ## Problem
 
 Constellation design has a lot of moving parts. Altitude affects coverage
@@ -43,12 +37,6 @@ The framework needed to:
 - Present results so tradeoffs are legible, not just numerically correct
 
 ## Technical Architecture
-
-<Figure
-  label="System architecture"
-  kind="diagram"
-  caption="Simulation core, orbit propagation, and analysis/reporting layers."
-/>
 
 The simulator has three layers:
 
@@ -92,17 +80,6 @@ coverage vs. satellite count) made the tradeoffs legible to technical and
 non-technical reviewers alike.
 
 ## Results
-
-<Figure
-  label="Coverage vs. altitude sweep"
-  kind="graph"
-  caption="Global coverage percentage across a swept altitude range for a fixed satellite count."
-/>
-<Figure
-  label="Revisit time distribution"
-  kind="graph"
-  caption="Revisit-time statistics for a candidate constellation design."
-/>
 
 The framework reproduced expected coverage trends (diminishing returns per
 added satellite at fixed altitude) and made it possible to compare candidate

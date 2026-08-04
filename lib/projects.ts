@@ -23,6 +23,7 @@ export interface ProjectFrontmatter {
   heroImage: string;
   diagram: "orbit" | "wave" | "circuit" | "triangle" | "grid";
   links?: ProjectLinks;
+  media: string[];
 }
 
 export interface Project extends ProjectFrontmatter {
@@ -49,6 +50,7 @@ function readProjectFile(fileName: string): Project {
     heroImage: data.heroImage ?? "",
     diagram: data.diagram ?? "grid",
     links: data.links ?? {},
+    media: data.media ?? [],
     content,
   };
 }

@@ -34,12 +34,6 @@ rendering layer under a separate
 [rigid-body physics project](/projects/spacecraft-dynamics-simulation)'s six
 example scenarios, and standalone for 2D flow-field visualization.
 
-<Figure
-  label="Renderer architecture"
-  kind="diagram"
-  caption="Shared GUI (window/input/GL context) with a 3D immediate-mode API and a 2D batched/GPU-colormap API on top."
-/>
-
 ## Problem
 
 pygame is a reasonable default for quick 2D visualization, but it's
@@ -63,12 +57,6 @@ GPU-driven:
   buildable as a plain CMake static library
 
 ## Technical Architecture
-
-<Figure
-  label="2D batching pipeline"
-  kind="diagram"
-  caption="LineBatch2D / PointBatch2D accumulate primitives per frame into a growable GPU buffer, drawn in one glDrawArrays/glDrawElementsInstanced call each."
-/>
 
 - **`GUI`.** Owns the GLFW window, GL context, keyboard/mouse state, and the
   3D immediate-mode draw API (`drawSphere`, `drawBox`, `drawCylinder`,
@@ -137,12 +125,6 @@ actually took investigation. Once diagnosed, the shader and API changes were
 mechanical.
 
 ## Results
-
-<Figure
-  label="Lighting before/after"
-  kind="image"
-  caption="Flat single-directional-light ambient (left) versus hemisphere ambient with per-object material reflectivity (right)."
-/>
 
 The engine now renders both the 3D physics-sim scenes and the 2D CFD-style
 visualizations through the same window/input layer, with every hot path

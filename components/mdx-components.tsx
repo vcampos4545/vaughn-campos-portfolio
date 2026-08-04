@@ -1,10 +1,8 @@
 import type { MDXComponents } from "mdx/types";
 import Image from "next/image";
 import Link from "next/link";
-import { Figure } from "./Figure";
 
 export const mdxComponents: MDXComponents = {
-  Figure,
   h2: ({ children, ...props }) => (
     <h2
       {...props}

@@ -31,3 +31,16 @@ through a public App Store release.
   deployment for the backend services.
 - **Data layer (Supabase/Postgres).** Real-time data synchronization for live
   app state, backed by PostgreSQL for analytics.
+
+## Implementation Details
+
+Once a recording finishes, whether it came from a local on-device capture or
+a LiveKit-hosted room, the raw file lands in S3. That upload triggers an
+FFmpeg encoding job rather than serving the raw file directly: the source
+gets transcoded into multiple quality renditions in parallel and packaged as
+HLS, segmented `.ts` chunks plus an `.m3u8` playlist per rendition, so a
+client can start playback quickly and step between qualities as bandwidth
+changes instead of committing to one fixed bitrate. The resulting HLS output
+is what actually gets served through the CDN, keeping playback smooth across
+uneven mobile network conditions without the client ever handling a single
+giant video file.

@@ -8,6 +8,7 @@ import { mdxComponents } from "@/components/mdx-components";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tag } from "@/components/Tag";
 import { FadeIn } from "@/components/FadeIn";
+import { MediaGallery } from "@/components/MediaGallery";
 
 export async function generateStaticParams() {
   return getAllProjectSlugs().map((slug) => ({ slug }));
@@ -124,6 +125,8 @@ export default async function ProjectPage({
             )}
           </div>
         )}
+
+        {project.media.length > 0 && <MediaGallery media={project.media} />}
       </FadeIn>
 
       <FadeIn delay={100}>
