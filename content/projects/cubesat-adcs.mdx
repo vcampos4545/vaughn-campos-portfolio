@@ -1,24 +1,163 @@
 ---
 title: "CubeSat ADCS"
-description: "A CubeSat attitude determination and control system."
-tags: ["Embedded Systems", "C++", "Sensors", "Reaction Wheels", "Control Theory"]
-status: "coming-soon"
+description: "A closed-loop satellite attitude determination and control system: EKF attitude estimation, PID/LQR/cascaded control, autonomous fault detection, and real single-satellite orbital dynamics, flown against a hardware-abstracted flight-software boundary."
+tags:
+  [
+    "C++",
+    "Attitude Control",
+    "Kalman Filtering",
+    "Orbital Mechanics",
+    "Fault Detection",
+    "Embedded Systems",
+  ]
+status: "active"
 featured: true
 order: 7
 year: "2026"
 diagram: "orbit"
-links: {}
+links: { github: "https://github.com/vcampos4545/satellite-adcs-sim" }
 ---
 
 ## Overview
 
-A full CubeSat attitude control stack: sensors, actuators, simulation, and
-control algorithms. This extends the attitude control and simulation work
-from [Spacecraft Dynamics Simulation](/projects/spacecraft-dynamics-simulation)
-and [Balancing Triangle](/projects/balancing-triangle) into a full CubeSat-class
-ADCS, including sensor fusion from IMU, sun sensor, and magnetometer data,
-reaction-wheel and magnetorquer actuation, and a control stack validated in
-simulation before moving to hardware.
+A full closed-loop ADCS/flight-software stack for a single satellite, built
+on top of [Spacecraft Dynamics Simulation](/projects/spacecraft-dynamics-simulation):
+multiplicative-EKF attitude estimation (star tracker primary, sun+magnetometer
+TRIAD fallback), PID/LQR/cascaded attitude control auto-tuned from bus
+inertia, a 4-wheel reaction-wheel pyramid plus magnetorquer cluster for
+detumble and momentum desaturation, an autonomous fault-detection/mode-manager
+layer, and a real orbit (two-body + J2, Sun/Moon third-body perturbation,
+atmospheric drag, solar radiation pressure, eclipse-gated power) — all flown
+against the same plain-data flight-software interface a real flight computer
+would run. The mission concept is a Reflect-Orbital-style spacecraft: an 18m
+deployable mirror that bounces sunlight onto a ground target, on top of the
+usual Nadir/Sun/Detumble/Target/Slew/Fine-pointing modes.
 
-Detailed architecture, implementation notes, and results will be published here
-as the project progresses.
+## Problem
+
+I wanted to go past "physics engine with a controller bolted on" and build
+something closer to how flight software actually gets validated: a stack
+that never reads ground truth, runs on a fixed cyclic rate, and has to keep
+flying through the failures a real mission runs into. That meant:
+
+- Attitude estimation good enough to fly on, not just "read `body->orientation`" —
+  including the routine dropouts (a blinded/slewing-too-fast star tracker) a
+  real system estimates through
+- Fault handling that's a first-class part of the architecture, not a
+  bolt-on check, since real spacecraft lose wheels and battery margin and
+  still have to keep pointing at *something* defensible
+- Real orbital dynamics — J2 drift, eclipse, third-body perturbation — driving
+  the sensor/power models instead of a kinematic stand-in, since a lot of
+  what makes ADCS interesting (eclipse-gated power, ground-station geometry,
+  sun-relative fallback pointing) only shows up once the orbit is real
+- A hardware-abstraction boundary strict enough that the same flight software
+  could plausibly run against a HIL rig or real hardware without changes
+
+## Technical Architecture
+
+- **`ADCS`/`FDIR`.** Fully hardware-abstracted — no `RigidBody`, no
+  `PhysicsWorld`, nothing but plain per-sensor readings in and commanded
+  actuator values out. `ADCS` owns a multiplicative EKF (propagate on gyro,
+  correct on star tracker or a TRIAD fallback), guidance for seven pointing
+  modes, three swappable attitude controllers, B-dot detumble, and
+  cross-product-law momentum desaturation. `FDIR` sits beside it as a peer,
+  not nested inside it — the same "mode manager as its own module" pattern
+  NASA cFS/JPL F' use — reading `ADCS`'s freshly-updated telemetry each
+  cycle and resolving a commanded-vs-actually-flown mode split (a wheel-loss
+  or low-battery fault forces `SUN_POINTING`; excess rate forces `DETUMBLE`
+  outright) without `ADCS` ever running its own fault checks.
+- **`FlightSoftware`.** The one place simulated hardware is actually
+  touched — deliberately not a `Satellite` method. Each sensor is sampled
+  independently at its own realistic firmware rate rather than one bundled
+  per-cycle snapshot: IMU/magnetometer/wheel telemetry every cycle (real
+  hardware for all three comfortably exceeds a 20 Hz loop), star tracker at
+  5 Hz, sun sensor at 10 Hz, battery telemetry at 1 Hz, matching real
+  fuel-gauge/star-tracker/sensor-bus polling rates. A cycle without a fresh
+  star-tracker frame reports "no new reading" rather than resending the last
+  one, so the EKF never re-corrects against a now-stale attitude.
+- **Orbit.** A real single-satellite orbit propagated by the engine's
+  `rigidbody/orbit/` module — two-body + J2 for the spacecraft, a
+  `CelestialSystem` Sun→Earth→Moon hierarchy for third-body perturbation and
+  eclipse geometry, atmospheric drag and solar-radiation pressure on the
+  predicted ground track. Ground-station targeting and EPS generation both
+  read off this real state, not a placeholder.
+
+## Implementation Details
+
+The FSW code (`ADCS`/`FDIR`/`FlightSoftware`) follows real embedded-firmware
+constraints on purpose: fixed-size arrays sized by compile-time constants, no
+dynamic allocation and no RNG anywhere in the hot path, enforced by a grep
+check that's part of every change. Guidance, control, and actuator
+allocation are all in body frame with an explicit "same sign convention
+`allocateActuators()`'s Moore-Penrose pseudoinverse assumes" discipline,
+since a mismatched sign here doesn't crash, it just silently destabilizes —
+B-dot and desaturation both went through a headless-reproduction pass to
+pin down the correct sign against the engine's actual reaction-torque
+convention before either law was trustworthy.
+
+Configuration is split by concern rather than one flat file:
+`SatelliteConfig` (this spacecraft's physical design and onboard FSW task
+rates), `VisualizationConfig` (camera/rendering/UI, never affects simulated
+behavior), and `PhysicalConstants` (GM/solar-flux values that don't depend
+on which satellite is flying). `HardwareConfig` — the plain-data mirror of
+wheel/torquer geometry `ADCS::configure()` needs — is built from the exact
+same loop that constructs the real simulated actuators, so it can't quietly
+drift out of sync with what's actually flying.
+
+## Challenges
+
+The most misleading bug wasn't in the flight software at all, it was in the
+renderer, and it looked exactly like a scale-factor mistake. Reaction wheels
+and magnetorquers were drawing at the satellite's center instead of their
+real mount offsets once the satellite actually sat at a real orbital
+position (~6.9e6 m from the origin). My first assumption was a missing
+`SATELLITE_VISUAL_SCALE` multiply somewhere in the wheel-drawing code.
+
+It wasn't. The actual cause was float32 precision: the engine computes
+`sat->position + sat->orientation * mountPositionBody` internally, in
+float32, before the renderer ever sees the result. At a ~6.9e6 m position,
+float32's ULP there is around 0.8 m — larger than the ~0.03 m mount offset
+itself — so that addition rounded the offset away almost entirely *before*
+`SATELLITE_VISUAL_SCALE` ever got applied to it. No amount of scaling after
+the fact could recover an offset that had already been rounded to noise.
+The fix was reading `mountPositionBody` directly and applying
+`SATELLITE_VISUAL_SCALE` to the *offset* first — turning a ~0.03 m value
+into a ~600 m one, comfortably above that same ULP — before rotating and
+adding it to the real position. Same category of bug as the constraint
+solver's absolute-determinant threshold on the engine side: correct math,
+wrong assumption about what scale it would actually run at.
+
+## Results
+
+The closed loop runs end to end in real time with a live GUI: FDIR
+correctly forces `SUN_POINTING` on a simulated wheel-authority loss and
+recovers on `clearLatchedFaults()`, the EKF holds a converged estimate
+through periodic star-tracker dropouts via the TRIAD fallback, B-dot damps
+a random deployment tumble against a real (weak) LEO field, and `REFLECT`
+mode actually bisects the sun/target directions to bounce light onto a
+ground target as the real orbit and Earth's rotation move both underneath
+it. The persistent test suite (one executable per feature area, `ctest`-
+driven) covers the EKF, detumble, FDIR, and EPS behavior against the plain
+per-sensor interface, independent of the simulation harness.
+
+## Lessons Learned
+
+Hardware abstraction is worth defending even when it's inconvenient. It was
+tempting more than once to let `ADCS` just read `Satellite` directly instead
+of routing everything through plain sensor readings and commanded actuator
+values — it would have been less code in the moment. Keeping that boundary
+paid off directly: the whole EKF/FDIR/detumble test suite drives synthetic
+sensor readings with no `rigidbody` dependency at all, and the one place
+real hardware gets touched (`FlightSoftware`) stayed small and auditable
+precisely because nothing else was allowed to reach around it.
+
+## Future Work
+
+- Hardware-in-the-loop bridge, reading real ADC/I2C sensor values into the
+  same `FlightSoftware` entry point instead of a simulated `Satellite`
+- Thermal modeling feeding into FDIR alongside the existing wheel/battery/
+  attitude-uncertainty faults
+- A real S-band downlink/link-budget model instead of geometric
+  ground-station visibility alone
+- Multi-fault scenarios (e.g. a wheel loss during a star-tracker dropout)
+  to exercise FDIR's fault-priority ordering under compounding failures
