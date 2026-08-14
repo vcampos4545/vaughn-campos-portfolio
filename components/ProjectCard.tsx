@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
 import type { Project } from "@/lib/projects";
 import { ProjectVisual } from "./ProjectVisual";
 import { StatusBadge } from "./StatusBadge";
@@ -16,7 +15,7 @@ export function ProjectCard({
   const code = String(index + 1).padStart(2, "0");
 
   const card = (
-    <div className="group flex h-full flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-border-strong">
+    <div className="group flex h-full flex-col gap-5">
       <ProjectVisual
         code={code}
         title={project.title}
@@ -24,9 +23,9 @@ export function ProjectCard({
         heroImage={project.heroImage || undefined}
       />
 
-      <div className="flex flex-1 flex-col gap-4 p-5">
+      <div className="flex flex-1 flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="text-lg font-semibold tracking-tight text-foreground">
+          <h3 className="text-xl font-semibold tracking-tight text-foreground">
             {project.title}
           </h3>
           <StatusBadge status={project.status} />
@@ -36,16 +35,15 @@ export function ProjectCard({
           {project.description}
         </p>
 
-        <div className="mt-auto flex flex-wrap gap-1.5 pt-2">
+        <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
           {project.tags.map((tag) => (
             <Tag key={tag}>{tag}</Tag>
           ))}
         </div>
 
         {!isComingSoon && (
-          <div className="flex items-center gap-1.5 pt-1 font-mono text-xs uppercase tracking-widest text-accent opacity-0 transition-opacity group-hover:opacity-100">
-            View Project
-            <ArrowUpRight size={14} />
+          <div className="pt-2 font-mono text-xs uppercase tracking-widest text-accent underline decoration-accent/30 underline-offset-4 transition-colors group-hover:decoration-accent">
+            Read More &rarr;
           </div>
         )}
       </div>

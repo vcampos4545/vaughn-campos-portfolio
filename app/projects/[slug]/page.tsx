@@ -61,7 +61,7 @@ export default async function ProjectPage({
           )}
         </div>
 
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+        <h1 className="mt-4 font-serif text-5xl font-normal tracking-tight text-balance sm:text-6xl">
           {project.title}
         </h1>
 

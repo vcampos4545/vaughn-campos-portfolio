@@ -52,19 +52,16 @@ export function ProjectVisual({
 }) {
   return (
     <div
-      className={`bracket-corners relative aspect-video w-full overflow-hidden border border-border bg-background-elevated ${className}`}
+      className={`relative aspect-[3/2] w-full overflow-hidden rounded-lg ${heroImage ? "" : "bracket-corners border border-border bg-background-elevated"} ${className}`}
     >
       {heroImage ? (
-        <>
-          <Image
-            src={heroImage}
-            alt={title}
-            fill
-            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-            className="object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/20" />
-        </>
+        <Image
+          src={heroImage}
+          alt={title}
+          fill
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+          className="object-cover transition-transform duration-1000 ease-out group-hover:scale-[1.03]"
+        />
       ) : (
         <>
           <div className="grid-paper absolute inset-0 h-full opacity-60" />
@@ -77,19 +74,17 @@ export function ProjectVisual({
               {DIAGRAMS[diagram]}
             </svg>
           )}
+          <div className="absolute left-3 top-3 font-mono text-[10px] uppercase tracking-widest text-muted-2">
+            Fig. {code}
+          </div>
+          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2">
+            <span className="font-mono text-[11px] uppercase tracking-widest text-muted">
+              {title}
+            </span>
+            <span className="font-mono text-[10px] text-muted-2">image pending</span>
+          </div>
         </>
       )}
-      <div className="absolute left-3 top-3 font-mono text-[10px] uppercase tracking-widest text-muted-2">
-        Fig. {code}
-      </div>
-      <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2">
-        <span className="font-mono text-[11px] uppercase tracking-widest text-muted">
-          {title}
-        </span>
-        {!heroImage && (
-          <span className="font-mono text-[10px] text-muted-2">image pending</span>
-        )}
-      </div>
     </div>
   );
 }

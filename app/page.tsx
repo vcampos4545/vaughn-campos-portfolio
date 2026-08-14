@@ -27,7 +27,7 @@ export default function HomePage() {
             Engineering Log &mdash; Est. 2026
           </div>
 
-          <h1 className="mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl">
+          <h1 className="mt-6 max-w-3xl font-serif text-6xl font-normal tracking-tight text-balance sm:text-7xl lg:text-8xl">
             Vaughn Campos
           </h1>
 

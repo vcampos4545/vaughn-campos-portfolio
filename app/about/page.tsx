@@ -62,7 +62,7 @@ export default function AboutPage() {
           Personnel File
         </div>
 
-        <h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+        <h1 className="mt-6 font-serif text-5xl font-normal tracking-tight text-balance sm:text-6xl">
           About
         </h1>
 
