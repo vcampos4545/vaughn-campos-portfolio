@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { nav, site } from "@/lib/site";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -48,15 +49,19 @@ export function Navbar() {
           >
             Resume
           </a>
+          <ThemeToggle />
         </nav>
 
-        <button
-          className="text-foreground sm:hidden"
-          aria-label="Toggle navigation menu"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? <X size={20} /> : <Menu size={20} />}
-        </button>
+        <div className="flex items-center gap-3 sm:hidden">
+          <ThemeToggle />
+          <button
+            className="text-foreground"
+            aria-label="Toggle navigation menu"
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
       </div>
 
       {open && (
