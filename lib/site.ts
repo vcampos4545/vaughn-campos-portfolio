@@ -1,6 +1,6 @@
 export const site = {
   name: "Vaughn Campos",
-  title: "Vaughn Campos — Software Engineer | Aerospace | Robotics | AI",
+  title: "Vaughn Campos | Software Engineer | Aerospace | Robotics | AI",
   role: "Software Engineer | Aerospace | Robotics | AI",
   description:
     "I build software and hardware systems spanning web applications, simulations, embedded systems, and spacecraft engineering.",

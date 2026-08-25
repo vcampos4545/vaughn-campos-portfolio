@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { Project } from "@/lib/projects";
 import { ProjectVisual } from "./ProjectVisual";
 import { StatusBadge } from "./StatusBadge";
-import { Tag } from "./Tag";
 
 export function ProjectCard({
   project,
@@ -31,18 +30,12 @@ export function ProjectCard({
           <StatusBadge status={project.status} />
         </div>
 
-        <p className="text-sm leading-relaxed text-muted">
+        <p className="flex-1 text-sm leading-relaxed text-muted">
           {project.description}
         </p>
 
-        <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
-          {project.tags.map((tag) => (
-            <Tag key={tag}>{tag}</Tag>
-          ))}
-        </div>
-
         {!isComingSoon && (
-          <div className="pt-2 font-mono text-xs uppercase tracking-widest text-accent underline decoration-accent/30 underline-offset-4 transition-colors group-hover:decoration-accent">
+          <div className="pt-3 font-mono text-xs uppercase tracking-widest text-accent underline decoration-accent/30 underline-offset-4 transition-colors group-hover:decoration-accent">
             Read More &rarr;
           </div>
         )}

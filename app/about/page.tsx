@@ -49,7 +49,7 @@ const CURRENTLY_BUILDING = [
   {
     title: "Embedded Flight Computer",
     description:
-      "A from-scratch embedded flight computer stack — sensor drivers, scheduling, and fault handling — designed with spacecraft and rocketry avionics in mind.",
+      "A from-scratch embedded flight computer stack (sensor drivers, scheduling, and fault handling) designed with spacecraft and rocketry avionics in mind.",
   },
 ];
 

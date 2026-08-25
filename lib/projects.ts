@@ -15,7 +15,6 @@ export interface ProjectFrontmatter {
   slug: string;
   title: string;
   description: string;
-  tags: string[];
   status: ProjectStatus;
   featured: boolean;
   order: number;
@@ -42,7 +41,6 @@ function readProjectFile(fileName: string): Project {
     slug,
     title: data.title,
     description: data.description,
-    tags: data.tags ?? [],
     status: data.status ?? "active",
     featured: Boolean(data.featured),
     order: data.order ?? 0,

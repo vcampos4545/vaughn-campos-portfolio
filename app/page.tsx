@@ -6,14 +6,6 @@ import { ProjectCard } from "@/components/ProjectCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { FadeIn } from "@/components/FadeIn";
 
-const DOMAINS = [
-  "Orbital Mechanics",
-  "Attitude Control",
-  "Embedded Systems",
-  "Applied AI",
-  "Full-Stack Web",
-];
-
 export default function HomePage() {
   const featuredProjects = getFeaturedProjects();
 
@@ -24,7 +16,7 @@ export default function HomePage() {
         <FadeIn>
           <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.2em] text-accent">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            Engineering Log &mdash; Est. 2026
+            Engineering Log &middot; Est. 2026
           </div>
 
           <h1 className="mt-6 max-w-3xl font-serif text-6xl font-normal tracking-tight text-balance sm:text-7xl lg:text-8xl">
@@ -76,19 +68,6 @@ export default function HomePage() {
             </a>
           </div>
         </FadeIn>
-
-        <FadeIn delay={150}>
-          <div className="mt-16 flex flex-wrap gap-2 border-t border-border pt-8">
-            {DOMAINS.map((domain) => (
-              <span
-                key={domain}
-                className="rounded-full border border-border bg-surface px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-muted"
-              >
-                {domain}
-              </span>
-            ))}
-          </div>
-        </FadeIn>
       </section>
 
       {/* Featured projects */}
@@ -98,7 +77,7 @@ export default function HomePage() {
             index="01"
             label="Featured Work"
             title="Selected projects"
-            description="A mix of simulation, embedded control, and applied AI work — spanning spacecraft dynamics to production software."
+            description="A mix of simulation, embedded control, and applied AI work, spanning spacecraft dynamics to production software."
           />
         </FadeIn>
 
