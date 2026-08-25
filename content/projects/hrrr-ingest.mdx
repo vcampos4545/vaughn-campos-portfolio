@@ -1,0 +1,22 @@
+---
+title: "HRRR Ingest"
+description: "A CLI tool that downloads NOAA's HRRR weather forecast data and stores the variables that actually drive electricity demand in a queryable local database."
+status: "completed"
+featured: true
+order: 10
+year: "2025"
+diagram: "grid"
+links: { github: "https://github.com/vcampos4545/hrrr-ingest" }
+---
+
+A small, focused take-home technical assessment for a company doing demand forecasting work similar to what I saw at Orenda: weather is one of the biggest drivers of electricity demand, and the task was building a clean way to pull real forecast data locally instead of working against a live API every time. HRRR Ingest downloads NOAA's High-Resolution Rapid Refresh model output and turns it into a queryable database.
+
+## What it does
+
+The tool pulls GRIB2 forecast files straight from NOAA's public HRRR S3 bucket, caching them locally by their source path so a re-run never re-downloads a file it already has. For each requested variable, temperature, dewpoint, humidity, wind components at 10m and 80m, solar flux, it uses `pygrib` to select the right message out of the GRIB file, then nearest-neighbor interpolates the model's native grid down to whatever lat/lon points you actually asked for. Everything lands in DuckDB in a normalized long format, one row per point, variable, and forecast valid time, which makes it trivial to query across variables and locations without needing a wide, sparse table.
+
+The one detail worth calling out: a `UNIQUE` constraint on `(valid_time_utc, run_time_utc, latitude, longitude, variable, source_s3)` makes ingestion idempotent. Re-running the same points file against the same forecast run just skips the rows that already exist instead of duplicating them, which matters once you're pulling the same locations on a recurring schedule and don't want to think about whether you've already ingested a given run.
+
+## Why it stayed small
+
+A take-home has a time box, so this stayed a focused utility instead of growing into a platform: a CLI, five modules (download, parse, transform, store, orchestrate), and tests covering the CLI and database layer. No web UI, no scheduler, just a clean local pipeline for getting real weather data into a shape that's actually queryable, which was the point of the exercise.
