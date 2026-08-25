@@ -1,0 +1,23 @@
+---
+title: "NYC Load Forecasting"
+description: "An LSTM model for forecasting New York City electricity demand, built during a summer internship at Orenda Power to support day-ahead and real-time wholesale market trading decisions."
+status: "completed"
+featured: true
+order: 7
+year: "2022"
+diagram: "wave"
+---
+
+I spent the summer of 2022 as an intern at Orenda Power, a company that develops and operates battery energy storage systems across New York City and trades in the wholesale power markets around them. My project was narrow but genuinely consequential: build a model that forecasts New York City's electricity demand accurately enough to inform real trading decisions.
+
+## Why demand forecasting matters here
+
+Wholesale electricity markets like NYISO run on two main timeframes. The day-ahead market clears the day before power is actually delivered, based on forecasted supply and demand, and the real-time market settles the difference between what was scheduled and what the grid actually needed in the moment. Virtual trading in these markets is a financial position on the price difference between those two settlements at a given location on the grid, and that price difference is driven substantially by how well anyone can predict what demand is actually going to look like. A better demand forecast means a better read on where day-ahead and real-time prices are likely to diverge, which is the entire basis for a virtual trade.
+
+## What I built
+
+I spent a couple of months tuning an LSTM (long short-term memory) network against historical NYC load data. LSTMs are a natural fit for this kind of problem because electricity demand is heavily sequential and seasonal at multiple timescales at once: hour of day, day of week, and time of year all matter, and a model needs to carry enough memory across a sequence to pick up on those patterns rather than treating each timestep independently. Most of the actual work was in tuning rather than architecture, getting the model to generalize across weather swings, holidays, and other irregular demand patterns instead of overfitting to the easy, predictable weekday shape most of the data follows.
+
+## Keeping this one high level
+
+This was internship work for a real trading desk, so I'm keeping the details here intentionally general rather than walking through architecture and hyperparameters the way I do for my personal projects. What I'll say is that it was my first real exposure to applying a deep learning model against a problem where the output directly informs a financial decision, not just a benchmark score, and that distinction changed how I thought about model evaluation. A slightly better validation loss doesn't matter if the model's errors cluster exactly where trading decisions are most sensitive to them.
