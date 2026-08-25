@@ -37,9 +37,9 @@ const SKILLS: { category: string; items: string[] }[] = [
 
 const CURRENTLY_BUILDING = [
   {
-    title: "CubeSat ADCS",
+    title: "Satellite ADCS",
     description:
-      "A full attitude determination and control stack for a CubeSat form factor, extending prior simulation and reaction-wheel control work toward flight-representative hardware.",
+      "A full attitude determination and control stack for a satellite, extending prior simulation and reaction-wheel control work toward flight-representative hardware.",
   },
   {
     title: "CFD Simulation",

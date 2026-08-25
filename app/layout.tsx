@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     "Robotics",
     "Embedded Systems",
     "Spacecraft Dynamics",
-    "CubeSat",
+    "Satellite ADCS",
     "GNC",
   ],
   authors: [{ name: site.name }],
