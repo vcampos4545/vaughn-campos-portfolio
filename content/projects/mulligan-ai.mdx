@@ -1,7 +1,6 @@
 ---
 title: "Mulligan AI"
 description: "AI-powered healthcare workflow platform for generating insurance appeals."
-tags: ["Next.js", "Supabase", "AWS", "LLMs", "Vector DB", "RAG"]
 status: "active"
 featured: true
 order: 2
@@ -11,68 +10,26 @@ heroImage: "/images/projects/mulligan-ai.png"
 links: { github: "https://github.com/vcampos4545/mulligan-ai" }
 ---
 
-## Overview
+Insurance denials are common, slow to appeal, and land hardest on the patients and providers who have the least time and expertise to fight them. Writing a good appeal means pulling together a denial letter, the underlying medical claim, and the specific policy language it's supposed to satisfy, into one coherent, persuasive document, and doing that well is a genuinely different skill than practicing medicine. Mulligan AI is my attempt at closing that gap. Upload a denial document, and it extracts the relevant details and drafts a supporting appeal grounded in what was actually submitted, instead of a generic template.
 
-A healthcare platform that processes insurance denial documents and helps
-generate appeals with AI. Insurance denials are common, slow to appeal, and
-disproportionately burden patients and providers who don't have the time or
-expertise to write a strong appeal letter. Upload a denial document, and
-Mulligan AI extracts the relevant details and drafts a supporting appeal.
+## Why this is harder than "summarize a PDF"
 
-## Problem
+The obvious naive approach, paste a denial letter into a general-purpose model and ask for an appeal, fails in a specific and predictable way: the model will happily write something fluent and confident that isn't actually grounded in the claim, the policy, or the denial reason in front of it. In a healthcare context that's not a minor quality issue, it's the difference between an appeal that cites the right policy clause and one that sounds right but doesn't hold up. So the real problem wasn't "can an LLM write an appeal letter," it was building a pipeline that reliably extracts structured facts from messy, inconsistently formatted documents, keeps generation grounded in the specific source material for that appeal, and does all of it inside an architecture appropriate for handling real healthcare data, as a real multi-user product with accounts and history rather than a one-shot script.
 
-Writing an appeal means synthesizing a denial letter, the underlying medical
-claim, and applicable policy language into one coherent, persuasive document.
-That process is manual, slow, and inconsistent across providers. The platform
-needed to:
+## The stack
 
-- Reliably extract structured data (denial reason, claim details, policy
-  references) from unstructured, inconsistently formatted documents
-- Generate appeal drafts that stay grounded in the source documents instead of
-  reading as generic or hallucinated
-- Handle sensitive healthcare data with an architecture appropriate for that
-  responsibility
-- Support a real multi-user workflow (accounts, document history, review)
-  rather than a single-shot script
+The frontend is Next.js and React, the upload, review, and appeal-editing surface, built for fast iteration and a straightforward deploy. Supabase and Postgres handle accounts, document metadata, and generated appeal records, with row-level security scoping every query to the user who owns it rather than trusting the application layer alone to enforce that boundary. AWS handles file storage and background processing alongside the Supabase-hosted data layer. The part that actually does the interesting work is the retrieval-augmented generation pipeline sitting in the middle: OpenAI embeddings feeding a Pinecone vector index, scoped per appeal, so a query for one user's appeal can never surface another user's documents.
 
-## Technical Architecture
+## How a document actually becomes grounding context
 
-- **Frontend (Next.js/React).** The upload, review, and appeal-editing
-  interface, built for fast iteration and a straightforward Vercel deployment.
-- **Data layer (Supabase/Postgres).** User accounts, document metadata, and
-  generated appeal records, using row-level security to scope data access per
-  user.
-- **RAG pipeline (OpenAI embeddings + Pinecone).** Uploaded documents are
-  chunked, embedded, and stored in a Pinecone vector index scoped per appeal.
-  Generating an appeal runs a retrieval step first: a query built from the
-  denial reason gets embedded and searched against that appeal's chunks, and
-  the closest matches are pulled into the prompt as grounding context.
-- **Infrastructure (AWS).** File storage and background processing run
-  alongside the Supabase-hosted data layer.
+A document comes in as PDF, Word, or plain text and gets extracted to raw text first. From there it's split into roughly 1,000 character chunks and embedded with OpenAI's `text-embedding-ada-002`, and each chunk gets upserted into Pinecone tagged with metadata: appeal ID, document type, file name, chunk index. That metadata tagging is what lets a query stay scoped to one appeal's own documents instead of searching across every user's data at once, which matters both for correctness and for not leaking one patient's information into another's generated appeal.
 
-## Implementation Details
+One detail I had to get right and keep consistent: the embedding model outputs 1536 dimensions, but the Pinecone index is provisioned at 1024. Every vector gets truncated down before storage, and every query embedding gets truncated the exact same way before search. Get that inconsistent, truncate on one side and not the other, and similarity search quietly degrades instead of failing loudly, which is a much worse failure mode to debug than an outright error.
 
-Documents are extracted to raw text (PDF, Word, or plain text), then split
-into roughly 1,000-character chunks and embedded with OpenAI's
-`text-embedding-ada-002`. Each chunk is upserted into Pinecone with metadata,
-appeal ID, document type, file name, chunk index, so a query can be scoped to
-one appeal's documents instead of searching across every user's data at
-once. The embedding model outputs 1536 dimensions, but the Pinecone index is
-provisioned at 1024, so every vector gets truncated before storage and every
-query embedding gets truncated the same way before search, keeping the two
-sides consistent.
+Very short documents, denial letters under about 1,000 characters, skip the vector store entirely and go straight into the prompt as-is. Chunking and embedding a single short paragraph adds a network round trip for retrieval that would have nothing meaningful to retrieve beyond the whole document anyway, so the small-document path is a plain pass-through instead of forcing every document through the same machinery regardless of size.
 
-Very short documents, denial letters under about 1,000 characters, skip the
-vector store entirely and get passed straight into the prompt. Chunking and
-embedding a single paragraph adds a network round trip without adding
-anything retrieval would find, so the small-document path is a plain
-pass-through instead of forcing everything through the same pipeline.
+At generation time, the denial reason itself becomes the search query. It gets embedded and matched against Pinecone with a metadata filter on that specific appeal ID, the top results come back as raw text chunks, and those get stitched into the prompt alongside the structured fields already extracted from the denial letter. Only after that retrieval step runs does the model actually draft anything. Retrieval happens before generation on every single request, which is what keeps the draft grounded in whatever was actually uploaded for that appeal instead of the model's general background knowledge of how insurance policy language tends to read.
 
-At generation time, the denial reason forms a search query, gets embedded,
-and is matched against Pinecone with a metadata filter on `appealId`. The
-top results come back as raw text chunks, get stitched into the prompt
-alongside the structured fields already extracted from the denial letter,
-and only then does the model draft the appeal. Retrieval happens before
-generation on every request, so the draft is grounded in whatever was
-actually uploaded for that appeal rather than the model's general knowledge
-of insurance policy language.
+## What I'd still want to build
+
+The current pipeline gets the core loop right: extract, retrieve, ground, generate. Where I'd want to keep pushing is tighter citation, having the model point back to the exact chunk and source document a given claim in the appeal came from, so a reviewer can verify it in seconds instead of re-reading the whole source document. That's the natural next step for a tool whose entire value proposition is trustworthiness, not just fluency.

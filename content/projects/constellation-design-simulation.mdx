@@ -1,7 +1,6 @@
 ---
 title: "Constellation Design Simulation"
 description: "A simulation framework for optimizing satellite constellation parameters."
-tags: ["C++", "Python", "Orbital Mechanics", "Optimization", "Simulation"]
 status: "completed"
 featured: true
 order: 4
@@ -19,89 +18,30 @@ media:
   ]
 ---
 
-## Overview
+Designing a single satellite's orbit is a solved, well-understood problem. Designing a constellation of them, dozens or hundreds of satellites working together for continuous coverage, is a different kind of problem entirely, because now every parameter you pick trades off against every other one, and the interactions aren't always intuitive. I built this simulator to actually explore that tradeoff space instead of hand-deriving coverage geometry for every candidate design one spreadsheet at a time.
 
-A tool for exploring satellite constellation tradeoffs: altitude, number of
-orbital planes, satellites per plane, coverage, sunlight exposure, and orbital
-constraints. Instead of hand-deriving coverage geometry for every candidate
-design, the simulator sweeps a parameter space and reports the tradeoffs
-directly.
+## Why this needed to be a simulator, not a spreadsheet
 
-## Problem
+Altitude affects coverage footprint, revisit time, radiation exposure, and launch cost, all at once and not always in the direction you'd guess. Plane count and satellites per plane affect coverage uniformity and total cost. Inclination interacts with all of it in ways that are easy to get wrong by hand, a small change in inclination can disproportionately hurt coverage at high latitudes in a way that doesn't show up until you actually compute it. Doing this in a spreadsheet means manually deriving coverage geometry for every candidate design, and it's exactly the kind of process where cross-parameter interactions quietly get missed. I wanted something that could sweep a real parameter space and report the actual tradeoffs back, not something that required me to already know the answer before I could check it.
 
-Constellation design has a lot of moving parts. Altitude affects coverage
-footprint, revisit time, radiation exposure, and launch cost. Plane count and
-satellites per plane affect coverage uniformity and cost. Doing this by hand
-in a spreadsheet makes it easy to miss interactions between parameters, like
-how a small change in inclination can disproportionately hurt coverage at
-high latitudes.
+## Three layers, each doing the part it's good at
 
-The framework needed to:
+The simulator splits cleanly into three pieces. An orbit propagation core in C++ handles two-body and J2-perturbed propagation for every satellite, using Walker-pattern generation to turn high-level constellation parameters into actual orbital elements for each satellite in the constellation. An analysis layer in Python takes the ephemeris that core exports and computes ground tracks, coverage, sunlight and eclipse exposure, and revisit-time statistics, where Python's plotting and numerical tooling genuinely earns its keep. On top of both sits an optimization driver that sweeps the design space against a coverage-and-cost objective and surfaces Pareto-efficient designs, the actual frontier of good tradeoffs, rather than pretending there's one single best answer to hand back.
 
-- Sweep constellation parameters (altitude, inclination, planes, sats per
-  plane) quickly
-- Compute ground coverage and revisit statistics over a simulated window
-- Account for eclipse and sunlight exposure per satellite
-- Present results so tradeoffs are legible, not just numerically correct
+Propagation is the performance-critical inner loop here, run once per satellite per timestep across every candidate design in a sweep, so it stays in C++ where that cost is manageable. Everything downstream of the raw ephemeris, where the interesting analysis and visualization work happens, lives in Python, because that's where the right tools already exist and reimplementing them in C++ would have bought nothing.
 
-## Technical Architecture
+## Getting from parameters to a real constellation
 
-The simulator has three layers:
+Orbital elements come from standard Walker constellation notation (`i:T/P/F`, inclination, total satellites, planes, phasing factor), then get propagated with a J2-perturbed model so that secular drift, nodal regression and apsidal rotation, stays consistent across the whole simulation window instead of silently accumulating error. Ground coverage is computed by discretizing Earth's surface into a grid and, at every timestep, checking each satellite's visibility to each grid point against a minimum elevation angle, the same geometric test any single-satellite pass-prediction tool uses, just run across an entire constellation and grid simultaneously. A cylindrical shadow model flags eclipse periods per satellite too, which feeds directly into power-system sizing conversations even though power modeling itself was out of scope for this project.
 
-- **Orbit propagation core (C++).** Two-body and J2-perturbed propagation for
-  each satellite, using Walker-pattern generation to derive orbital elements
-  from high-level constellation parameters.
-- **Analysis layer (Python).** Ground-track and coverage computation,
-  sunlight/eclipse determination, and revisit-time statistics, built on the
-  ephemeris exported from the C++ core.
-- **Optimization driver.** Sweeps the design space against a coverage/cost
-  objective and surfaces Pareto-efficient designs rather than a single best
-  answer.
+## The two problems that actually slowed me down
 
-Propagation is the performance-critical inner loop, so it stays in C++.
-Analysis and visualization live in Python, where the plotting and numerical
-tooling is better.
+Performance was the first one. Naive nested loops over satellites, time steps, and ground points scale badly, and a full parameter sweep across dozens of candidate constellations turns into an overnight batch job fast if you're not careful. Vectorizing the coverage computation and keeping propagation itself in C++ instead of Python was what turned a full sweep into something interactive enough to actually iterate on.
 
-## Implementation Details
+Presentation was the second, and it surprised me more. Raw coverage numbers, a table of percentages and revisit times, don't communicate a tradeoff on their own, even to someone who fully understands orbital mechanics. Comparative plots, coverage against altitude, coverage against satellite count, made the actual tradeoffs legible in a way the raw numbers never did, for technical and non-technical reviewers alike. It was a genuine reminder that simulation work is as much about designing outputs someone can act on as it is about getting the physics right in the first place.
 
-Orbital elements come from Walker constellation notation (`i:T/P/F`), then get
-propagated with a J2-perturbed model to keep secular drift (nodal regression,
-apsidal rotation) consistent over the simulation window. Ground coverage is
-computed by discretizing the Earth's surface into a grid and, at each
-timestep, checking satellite-to-grid-point visibility against a minimum
-elevation angle.
+## What it's good for
 
-A cylindrical shadow model flags eclipse periods per satellite, which feeds
-power-system sizing discussions even though power modeling itself was out of
-scope here.
+The framework reproduces the coverage trends you'd expect (diminishing returns per added satellite at a fixed altitude, for instance) and, more usefully, makes it possible to lay candidate constellations side by side and compare them in minutes instead of days of manual analysis. Keeping the performance-critical propagation code cleanly separated from the analysis and visualization code paid off directly. Each layer got to use whichever language and toolset actually fit the job, instead of one language doing double duty and doing neither job especially well.
 
-## Challenges
-
-Performance was the main issue. Naive nested loops over satellites, time
-steps, and ground points scale poorly. Vectorizing the coverage computation
-and keeping propagation in C++ instead of Python made full parameter sweeps
-interactive rather than an overnight batch job.
-
-Presentation was the second challenge. Raw coverage numbers don't communicate
-tradeoffs well on their own. Comparative plots (coverage vs. altitude,
-coverage vs. satellite count) made the tradeoffs legible to technical and
-non-technical reviewers alike.
-
-## Results
-
-The framework reproduced expected coverage trends (diminishing returns per
-added satellite at fixed altitude) and made it possible to compare candidate
-constellations side by side in minutes instead of days of manual analysis.
-
-## Lessons Learned
-
-Keeping performance-critical propagation code separate from analysis and
-visualization code paid off. Each layer got to use the right tool for the job.
-It was also a good reminder that simulation work is as much about designing
-legible outputs as it is about correct physics.
-
-## Future Work
-
-- Add J4 and drag perturbation terms for longer-duration simulations
-- Extend the optimizer to consider ground-station downlink windows
-- Add inter-satellite link feasibility analysis for mesh-networked constellations
+Where I'd take it next: J4 and drag perturbation terms for longer-duration simulations where secular drift matters more, ground-station downlink windows folded into the optimizer alongside coverage, and inter-satellite link feasibility for constellations that are meant to work as a mesh network rather than independent satellites sharing an orbit shell.

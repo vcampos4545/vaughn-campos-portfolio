@@ -1,15 +1,6 @@
 ---
 title: "CubeSat ADCS"
 description: "A closed-loop satellite attitude determination and control system: EKF attitude estimation, PID/LQR/cascaded control, autonomous fault detection, and real single-satellite orbital dynamics, flown against a hardware-abstracted flight-software boundary."
-tags:
-  [
-    "C++",
-    "Attitude Control",
-    "Kalman Filtering",
-    "Orbital Mechanics",
-    "Fault Detection",
-    "Embedded Systems",
-  ]
 status: "active"
 featured: true
 order: 7
@@ -18,146 +9,189 @@ diagram: "orbit"
 links: { github: "https://github.com/vcampos4545/satellite-adcs-sim" }
 ---
 
-## Overview
+I built [satellite-adcs-sim](https://github.com/vcampos4545/satellite-adcs-sim) because I wanted to actually understand attitude determination and control systems, not just wire up a PID controller and call it done. What follows is a walk through what I learned building it: what ADCS is, why every piece of it exists, and where the real engineering tradeoffs are. Where it's useful I'll point at what the simulation actually implements; where I'm explaining the broader design space, I'll say so.
 
-A full closed-loop ADCS/flight-software stack for a single satellite, built
-on top of [Spacecraft Dynamics Simulation](/projects/spacecraft-dynamics-simulation):
-multiplicative-EKF attitude estimation (star tracker primary, sun+magnetometer
-TRIAD fallback), PID/LQR/cascaded attitude control auto-tuned from bus
-inertia, a 4-wheel reaction-wheel pyramid plus magnetorquer cluster for
-detumble and momentum desaturation, an autonomous fault-detection/mode-manager
-layer, and a real orbit (two-body + J2, Sun/Moon third-body perturbation,
-atmospheric drag, solar radiation pressure, eclipse-gated power) — all flown
-against the same plain-data flight-software interface a real flight computer
-would run. The mission concept is a Reflect-Orbital-style spacecraft: an 18m
-deployable mirror that bounces sunlight onto a ground target, on top of the
-usual Nadir/Sun/Detumble/Target/Slew/Fine-pointing modes.
+## Why ADCS exists
 
-## Problem
+A satellite that can't control its attitude can't do its job. Solar panels need to face the sun to generate power. Antennas need to face a ground station to talk to it. Cameras need to face a target to image it. Every one of those is an attitude problem before it's anything else.
 
-I wanted to go past "physics engine with a controller bolted on" and build
-something closer to how flight software actually gets validated: a stack
-that never reads ground truth, runs on a fixed cyclic rate, and has to keep
-flying through the failures a real mission runs into. That meant:
+ADCS splits cleanly into two halves that depend on each other but are conceptually separate. **Determination** is figuring out which way you're actually pointing, from noisy sensors, without ever seeing ground truth. **Control** is computing and applying the torques that get you pointing somewhere else, or holding where you are. Almost everything below falls into one of those two buckets. Determination is a filtering problem. Control is a dynamics-and-actuation problem. They meet in the middle at "here's my best estimate of attitude and rate" and diverge from there.
 
-- Attitude estimation good enough to fly on, not just "read `body->orientation`" —
-  including the routine dropouts (a blinded/slewing-too-fast star tracker) a
-  real system estimates through
-- Fault handling that's a first-class part of the architecture, not a
-  bolt-on check, since real spacecraft lose wheels and battery margin and
-  still have to keep pointing at *something* defensible
-- Real orbital dynamics — J2 drift, eclipse, third-body perturbation — driving
-  the sensor/power models instead of a kinematic stand-in, since a lot of
-  what makes ADCS interesting (eclipse-gated power, ground-station geometry,
-  sun-relative fallback pointing) only shows up once the orbit is real
-- A hardware-abstraction boundary strict enough that the same flight software
-  could plausibly run against a HIL rig or real hardware without changes
+## Reference frames
 
-## Technical Architecture
+Attitude is meaningless without a reference. This project uses two frames throughout: **ECI** (Earth-Centered Inertial, Earth's center as the origin, axes fixed relative to the stars rather than rotating with the planet) as the world frame, and **body frame**, fixed to the spacecraft with its origin at the center of mass. Every guidance law resolves to "what direction, in world frame, do I want a specific body axis to point," and every sensor reading and actuator command lives in body frame.
 
-- **`ADCS`/`FDIR`.** Fully hardware-abstracted — no `RigidBody`, no
-  `PhysicsWorld`, nothing but plain per-sensor readings in and commanded
-  actuator values out. `ADCS` owns a multiplicative EKF (propagate on gyro,
-  correct on star tracker or a TRIAD fallback), guidance for seven pointing
-  modes, three swappable attitude controllers, B-dot detumble, and
-  cross-product-law momentum desaturation. `FDIR` sits beside it as a peer,
-  not nested inside it — the same "mode manager as its own module" pattern
-  NASA cFS/JPL F' use — reading `ADCS`'s freshly-updated telemetry each
-  cycle and resolving a commanded-vs-actually-flown mode split (a wheel-loss
-  or low-battery fault forces `SUN_POINTING`; excess rate forces `DETUMBLE`
-  outright) without `ADCS` ever running its own fault checks.
-- **`FlightSoftware`.** The one place simulated hardware is actually
-  touched — deliberately not a `Satellite` method. Each sensor is sampled
-  independently at its own realistic firmware rate rather than one bundled
-  per-cycle snapshot: IMU/magnetometer/wheel telemetry every cycle (real
-  hardware for all three comfortably exceeds a 20 Hz loop), star tracker at
-  5 Hz, sun sensor at 10 Hz, battery telemetry at 1 Hz, matching real
-  fuel-gauge/star-tracker/sensor-bus polling rates. A cycle without a fresh
-  star-tracker frame reports "no new reading" rather than resending the last
-  one, so the EKF never re-corrects against a now-stale attitude.
-- **Orbit.** A real single-satellite orbit propagated by the engine's
-  `rigidbody/orbit/` module — two-body + J2 for the spacecraft, a
-  `CelestialSystem` Sun→Earth→Moon hierarchy for third-body perturbation and
-  eclipse geometry, atmospheric drag and solar-radiation pressure on the
-  predicted ground track. Ground-station targeting and EPS generation both
-  read off this real state, not a placeholder.
+Attitude itself is represented as a quaternion, not Euler angles. The practical reason is gimbal lock: Euler angles have a singularity where two rotation axes align and you lose a degree of freedom, right when a spacecraft is often doing something like a large slew. Quaternions have no such singularity, compose cheaply, and their kinematics are a clean first-order ODE:
 
-## Implementation Details
+$$
+\dot{q} = \tfrac{1}{2} q \otimes \begin{pmatrix} 0 \\ \boldsymbol{\omega} \end{pmatrix}
+$$
 
-The FSW code (`ADCS`/`FDIR`/`FlightSoftware`) follows real embedded-firmware
-constraints on purpose: fixed-size arrays sized by compile-time constants, no
-dynamic allocation and no RNG anywhere in the hot path, enforced by a grep
-check that's part of every change. Guidance, control, and actuator
-allocation are all in body frame with an explicit "same sign convention
-`allocateActuators()`'s Moore-Penrose pseudoinverse assumes" discipline,
-since a mismatched sign here doesn't crash, it just silently destabilizes —
-B-dot and desaturation both went through a headless-reproduction pass to
-pin down the correct sign against the engine's actual reaction-torque
-convention before either law was trustworthy.
+where $\boldsymbol{\omega}$ is body-frame angular velocity. Renormalizing $q$ after every integration step keeps it a valid unit quaternion as floating-point error accumulates, a small detail, but skip it and your attitude representation quietly stops being a rotation at all.
 
-Configuration is split by concern rather than one flat file:
-`SatelliteConfig` (this spacecraft's physical design and onboard FSW task
-rates), `VisualizationConfig` (camera/rendering/UI, never affects simulated
-behavior), and `PhysicalConstants` (GM/solar-flux values that don't depend
-on which satellite is flying). `HardwareConfig` — the plain-data mirror of
-wheel/torquer geometry `ADCS::configure()` needs — is built from the exact
-same loop that constructs the real simulated actuators, so it can't quietly
-drift out of sync with what's actually flying.
+## Sensors
 
-## Challenges
+Real ADCS sensors don't hand you attitude. They hand you noisy, biased, sometimes-wrong physical measurements, and estimation is the process of turning that into something trustworthy.
 
-The most misleading bug wasn't in the flight software at all, it was in the
-renderer, and it looked exactly like a scale-factor mistake. Reaction wheels
-and magnetorquers were drawing at the satellite's center instead of their
-real mount offsets once the satellite actually sat at a real orbital
-position (~6.9e6 m from the origin). My first assumption was a missing
-`SATELLITE_VISUAL_SCALE` multiply somewhere in the wheel-drawing code.
+- **IMU (gyro + accelerometer).** The workhorse for propagating attitude between corrections. A real gyro has both measurement noise and a slowly drifting bias. Ignore the bias and your attitude estimate drifts away steadily even while sitting still. This project models both explicitly, tuned to match real MEMS gyro figures.
+- **Magnetometer.** Measures the local geomagnetic field vector in body frame. Cheap, always available (no line of sight requirement), but only useful as an attitude reference when you know what the field should look like at your position. It's also a weak, slowly varying reference near the equator, where field lines run roughly parallel to velocity.
+- **Sun sensors.** Coarse, robust, and simple: a photodiode array that reports sun direction in body frame to maybe half a degree. Nearly always available outside eclipse, which makes it a good secondary reference even though it's not precise.
+- **Star trackers.** The precision instrument. It images the star field along a boresight and pattern matches against a catalog for arcsecond class absolute attitude. But it has two real failure modes that flight software has to treat as routine, not exceptional. It goes blind if the sun gets within some exclusion angle of the boresight (this project uses 30 degrees), and it can't centroid stars while the body is rotating faster than roughly 1 degree per second. A star tracker that reports "no valid reading" for a few cycles during a slew is normal operation, not a fault.
+- **GPS.** In a real system, GPS (or GNSS more broadly) is how a spacecraft knows its own orbital position, which attitude guidance needs for nadir pointing, eclipse prediction, and ground station geometry. This simulation doesn't model a GPS receiver directly. The harness feeds real propagated orbital position straight into flight software, standing in for "GPS already solved this problem." Worth knowing as a simplification, not a claim that position knowledge is free in a real system.
 
-It wasn't. The actual cause was float32 precision: the engine computes
-`sat->position + sat->orientation * mountPositionBody` internally, in
-float32, before the renderer ever sees the result. At a ~6.9e6 m position,
-float32's ULP there is around 0.8 m — larger than the ~0.03 m mount offset
-itself — so that addition rounded the offset away almost entirely *before*
-`SATELLITE_VISUAL_SCALE` ever got applied to it. No amount of scaling after
-the fact could recover an offset that had already been rounded to noise.
-The fix was reading `mountPositionBody` directly and applying
-`SATELLITE_VISUAL_SCALE` to the *offset* first — turning a ~0.03 m value
-into a ~600 m one, comfortably above that same ULP — before rotating and
-adding it to the real position. Same category of bug as the constraint
-solver's absolute-determinant threshold on the engine side: correct math,
-wrong assumption about what scale it would actually run at.
+## Attitude determination
 
-## Results
+Here's the core problem: no single sensor gives you full, precise, always available attitude. Gyros drift. Magnetometers are weak. Star trackers go blind. So attitude determination is really a fusion problem: combine what you have, weighted by how much you trust each source, in a way that degrades gracefully when a sensor drops out.
 
-The closed loop runs end to end in real time with a live GUI: FDIR
-correctly forces `SUN_POINTING` on a simulated wheel-authority loss and
-recovers on `clearLatchedFaults()`, the EKF holds a converged estimate
-through periodic star-tracker dropouts via the TRIAD fallback, B-dot damps
-a random deployment tumble against a real (weak) LEO field, and `REFLECT`
-mode actually bisects the sun/target directions to bounce light onto a
-ground target as the real orbit and Earth's rotation move both underneath
-it. The persistent test suite (one executable per feature area, `ctest`-
-driven) covers the EKF, detumble, FDIR, and EPS behavior against the plain
-per-sensor interface, independent of the simulation harness.
+### TRIAD: a deterministic two-vector solve
 
-## Lessons Learned
+The simplest real solution: if you have two non-parallel reference vectors measured in both body frame and a known reference frame (say, sun direction and magnetic field direction), you can build an orthonormal basis from each pair and read off the rotation between them directly. No iteration, no statistics, just linear algebra:
 
-Hardware abstraction is worth defending even when it's inconvenient. It was
-tempting more than once to let `ADCS` just read `Satellite` directly instead
-of routing everything through plain sensor readings and commanded actuator
-values — it would have been less code in the moment. Keeping that boundary
-paid off directly: the whole EKF/FDIR/detumble test suite drives synthetic
-sensor readings with no `rigidbody` dependency at all, and the one place
-real hardware gets touched (`FlightSoftware`) stayed small and auditable
-precisely because nothing else was allowed to reach around it.
+$$
+t_1 = \hat{v}_1, \quad t_2 = \widehat{v_1 \times v_2}, \quad t_3 = t_1 \times t_2
+$$
 
-## Future Work
+Build this basis from the body-frame measurements ($M_{body}$) and from the known reference-frame directions ($M_{ref}$), and the attitude is just $R = M_{ref} M_{body}^{T}$. It's fast, robust, and has an obvious failure mode: if the two vectors are nearly parallel, the cross product is near zero and the solution is ill conditioned. This project explicitly rejects a TRIAD solve when the reference vectors are within about 0.1 rad of parallel, rather than returning a garbage answer with no warning.
 
-- Hardware-in-the-loop bridge, reading real ADC/I2C sensor values into the
-  same `FlightSoftware` entry point instead of a simulated `Satellite`
-- Thermal modeling feeding into FDIR alongside the existing wheel/battery/
-  attitude-uncertainty faults
-- A real S-band downlink/link-budget model instead of geometric
-  ground-station visibility alone
-- Multi-fault scenarios (e.g. a wheel loss during a star-tracker dropout)
-  to exercise FDIR's fault-priority ordering under compounding failures
+### QUEST: generalizing past two vectors
+
+TRIAD's obvious limitation is that it only uses two vectors and treats them asymmetrically (the first is trusted exactly, the second only partially). QUEST solves the more general problem: given $N$ vector measurement pairs, each with its own confidence weight, find the attitude that minimizes the weighted sum of alignment errors, a batch least-squares solve over Wahba's problem, typically via an eigenvalue solve on a symmetric matrix built from the weighted vector outer products. It's the natural next step once you have more than two references, or want a statistically principled way to weight sensors of different quality. This simulation doesn't implement QUEST. TRIAD's two-vector fallback is sufficient here, but it's worth understanding as what TRIAD generalizes into.
+
+### MEKF: the real workhorse
+
+TRIAD and QUEST both solve for attitude from a single instant's measurements. What you actually want is a filter that fuses gyro propagation with periodic absolute corrections, tracks its own uncertainty, and handles sensor dropouts gracefully. That's a Kalman filter, except attitude quaternions don't live in a flat vector space, so a naive linear KF doesn't apply directly. The standard fix is a **multiplicative extended Kalman filter (MEKF)**. The nominal state (a full quaternion and a gyro bias estimate) propagates directly through its own nonlinear kinematics, while the filter's covariance describes uncertainty in a small angle error state around that nominal: six states, three axis attitude error and three axis bias error.
+
+**Propagate**, every cycle, from bias-corrected gyro rate:
+
+$$
+\boldsymbol{\omega} = \boldsymbol{\omega}_{gyro} - \hat{b}, \qquad \hat{q} \mathrel{+}= \tfrac{1}{2}\hat{q}\otimes(0,\boldsymbol{\omega})\,dt
+$$
+
+with covariance advanced by linearizing the error dynamics $\dot{\delta\theta} = -\boldsymbol{\omega}\times\delta\theta - \delta b$ around the current state and integrating.
+
+**Correct**, whenever an absolute measurement (star tracker, or TRIAD as fallback) is available:
+
+$$
+S = P_{\theta\theta} + R, \qquad K = P_{\theta\theta} S^{-1}, \qquad \delta\theta = K\, dz
+$$
+
+where $dz$ is the small angle innovation between measured and predicted attitude, and the correction is applied multiplicatively, $\hat{q} \leftarrow \hat{q}\otimes(1, \tfrac{1}{2}\delta\theta)$, renormalized, rather than added, which is the whole reason this is "multiplicative" and not just an EKF.
+
+The filter also exposes its own uncertainty as a live number (the RMS of the attitude error covariance's diagonal), not just a point estimate. That matters beyond just "is this precise." It's a direct input to fault detection, covered below.
+
+## Actuators
+
+### Reaction wheels
+
+A reaction wheel is a spinning disk mounted to the bus. Spinning it up in one direction reacts a torque on the bus in the other, by conservation of angular momentum. It's the primary fine attitude actuator on most three-axis stabilized spacecraft because it's precise, fast, and doesn't consume propellant.
+
+One wheel gives you torque about one axis. Three orthogonal wheels give you full 3-axis authority, but a **pyramid configuration** of four wheels, each spin axis tilted off orthogonal so any three of the four span all three body axes, is common in practice. It buys single-wheel-failure redundancy for free, at the cost of needing an allocation step (below) instead of a direct per-axis mapping. This project uses that four-wheel pyramid, and fault detection explicitly checks for at least three healthy wheels, since two arbitrary vectors can only ever span a plane, not a volume.
+
+The catch with reaction wheels: they're purely internal. Spinning one up doesn't remove momentum from the system, it just moves it from the bus to the wheel. Keep commanding torque in the same rotational sense, fighting a constant external disturbance torque, say, and a wheel's speed climbs monotonically toward its physical limit. That's **saturation**, and once a wheel hits it, it can't accept more momentum and stops being useful for control on that axis.
+
+### Desaturating wheels
+
+Only an external torque can actually remove momentum from the system, and the standard tool is the magnetorquers. The classic approach is the **cross product law** (Stickler and Alfriend): command a magnetic dipole moment proportional to the cross product of total wheel momentum and the local field,
+
+$$
+\mathbf{m} = \frac{k}{|\mathbf{B}|^2}\,(\mathbf{H}_{wheel} \times \mathbf{B})
+$$
+
+This produces a torque ($\boldsymbol{\tau} = \mathbf{m}\times\mathbf{B}$) that drains wheel momentum without needing a dedicated attitude-hold maneuver. It runs continuously in the background whenever wheel saturation creeps up, alongside whatever pointing mode is active. One real subtlety: the external torque this creates still has to be absorbed by the same wheels being desaturated, so pushing full strength while already near saturation leaves no spare capacity to react against and can destabilize pointing. Scaling the gain by remaining headroom, full strength when there's room, backing off as it disappears, is what keeps the maneuver itself from causing the problem it's solving.
+
+### Magnetorquers
+
+A magnetorquer is a current-driven coil that generates a magnetic dipole moment. Drive current through it inside Earth's field and you get a torque, $\boldsymbol{\tau} = \mathbf{m}\times\mathbf{B}$, with essentially no moving parts and no propellant. The fundamental limitation is right there in the formula: you can only produce torque perpendicular to the local field. Magnetorquers alone can't give you arbitrary 3-axis torque at any instant. Over an orbit, as the field direction sweeps, they can eventually reach every axis, just not all at once. That's why they're the standard choice for detumble and desaturation (where "eventually" is fine) and not for precision pointing (where "eventually" is not fine).
+
+**B-dot detumbling** is the textbook technique for the first thing a satellite does after separating from its launch vehicle, tumbling with whatever residual rate the deployment gave it: drive a dipole moment opposite the field's own rate of change,
+
+$$
+\mathbf{m} = -k \,\dot{\mathbf{B}}
+$$
+
+A tumbling body sees the ambient field rotate in its own frame even in a static field, so $\dot{\mathbf{B}}$ (finite differenced from consecutive magnetometer samples) is a reasonable proxy for body rate without needing any attitude estimate at all, which is exactly the point, since right after deployment you may not have a converged attitude estimate yet. Gain tuning matters more than it looks. Tune for the worst-case tumble rate and the rods sit underutilized for most of the maneuver, since the representative rate during the long tail of a detumble is much lower than the initial deployment kick.
+
+### The rest of the actuator toolbox
+
+A few other actuator types round out what real ADCS systems reach for, none of which this simulation implements, but worth knowing what problem each solves.
+
+- **Control moment gyroscopes (CMGs).** A spinning rotor on a gimbal. Torque comes from precession as the gimbal rotates, not from spinning the rotor up or down. Far higher torque authority than reaction wheels for the same power budget, at the cost of a genuinely harder allocation problem (singularities in the gimbal geometry). The standard choice for large, agile spacecraft like the ISS or big imaging satellites that need to slew fast.
+- **Thrusters.** The only actuator that can desaturate momentum and provide torque at any orientation, at the cost of consuming propellant every time you use it. Reserved for large or urgent maneuvers, or CMG desaturation, rather than routine fine pointing.
+- **Gravity gradient booms.** A passive mechanism. A mass on a boom extended away from the bus lets Earth's tidal gravity gradient itself provide a small restoring torque toward local vertical, no power or propellant required, at the cost of only working for nadir-ish pointing and being weak.
+- **Aerodynamic control surfaces.** Fins or vanes that use residual atmospheric drag for torque, viable only in very low LEO where the atmosphere is thick enough to matter.
+- **Solar sails.** Using radiation pressure itself, via a tiltable reflective surface, as both a propulsion and (with the right geometry) an attitude control actuator.
+
+## Control
+
+Once you know your attitude and rate, and know where you want to point, control computes the torque command to get there. This project implements three interchangeable controllers, each taking the same interface: target attitude, current attitude and rate, timestep, out to a torque command.
+
+- **PID.** Quaternion error PID with integral clamping (to prevent windup during a large sustained error). The standard first thing to reach for. Well understood, easy to tune, no model of the plant beyond the gains themselves.
+- **LQR.** Models each axis as a double integrator ($\dot\theta = \omega$, $\dot\omega = \tau/I$), and solves the continuous-time algebraic Riccati equation for the optimal gain, closed form here since a 2-state/1-input system doesn't need a numerical CARE solver. Optimal in a well-defined sense (minimizing a quadratic cost on error and effort), at the cost of the linearization and per-axis decoupling being real assumptions, not free.
+- **Cascaded (rate inner, attitude outer).** The outer loop maps attitude error to a rate command, with saturation to cap commanded rate during a large slew. The inner loop then tracks that rate command with its own torque law. This decoupling is what real flight software often prefers: the rate-command saturation gives you a clean, explicit bound on how aggressively the spacecraft will ever slew, which a bare PID's gains don't give you directly.
+- **MPC.** Not implemented here, but worth naming. Model predictive control solves an optimization over a receding horizon every cycle, explicitly handling actuator constraints (torque limits, wheel saturation) as part of the optimization rather than as an afterthought. It's the natural answer when constraints are tight and coupled. I didn't reach for it here because LQR and cascaded control, with the actuator-authority-aware gain scheduling below, already respect the real torque budget without needing an onboard optimizer running every cycle.
+
+### Gains that respect actuator reality
+
+A subtlety that bit me during development: gains derived purely from a settling time target don't know anything about how much torque the actuators can actually deliver. At high inertia, a fast settling-time target can demand torque no wheel has, and once you're commanding more torque than exists, the achieved response has nothing to do with the tuning you asked for. The fix is deriving the controller's natural frequency $\omega_n$ from the settling-time target as usual, then explicitly capping it against the actuator torque budget for a worst-case (antipodal) attitude error:
+
+$$
+\omega_n = \min\!\left(\frac{4}{\zeta\, t_s},\ \sqrt{\frac{\tau_{max}}{I\pi}}\right)
+$$
+
+If the requested settling time is achievable within budget, this is a no-op. If it isn't, the achieved settling time comes out longer than requested, self-derived from real actuator authority instead of a second hardcoded constant that would inevitably drift out of sync with the first. This is one of those details that looks like a minor implementation nicety until you hit it: without the cap, wheels climb toward saturation while pointing error barely moves, which looks exactly like a guidance or control bug and isn't one.
+
+## Actuator allocation
+
+There's a step between "control computed a torque vector" and "wheels spin up" that's easy to skip past but is genuinely most of the actuation engineering: mapping one 3-axis torque (or dipole) command onto $N$ individual actuators along fixed, often non-orthogonal axes. Four wheels in a pyramid, or three-plus torque rods.
+
+The general solution is a **minimum-norm allocation via the Moore-Penrose pseudoinverse**. Stack each actuator's axis as a column of a matrix $A$. The pseudoinverse $A^{+} = A^{T}(AA^{T})^{-1}$ maps the desired 3-vector torque onto the $N$-vector of individual actuator commands that produces it with the least total actuator effort. The elegant part is that $AA^{T}$ is always $3\times 3$ regardless of how many actuators you have. Three orthogonal wheels, a four-wheel pyramid, a six-rod torquer cluster, all go through the exact same allocation code, as long as the axes span all three dimensions.
+
+This is also where a subtle sign convention bug can hide with no error message at all. If your actuator's simulated reaction dynamics apply the torque you command directly to the body, but your physical intuition (or your engine's convention) is actually Newton's third law reaction, spin the wheel one way, the bus reacts the other, then every hand-derived law that computes "torque I want applied to the bus" and skips the allocator's own consistent convention has to bake in a compensating sign flip itself. Get it backwards and nothing crashes. The system just quietly destabilizes. I found this exact bug empirically, not by inspection. The textbook desaturation sign pumped wheels to full saturation and drove pointing error to 170 degrees in testing before I traced it back to this.
+
+## Fault management (FDIR)
+
+Real spacecraft lose wheels. Batteries sag. Attitude estimates degrade. A production ADCS can't just assume nominal conditions. It needs an autonomous layer watching system health and able to act without waiting for ground intervention, because the round trip to a ground station can be minutes to hours away.
+
+This project models **FDIR** (fault detection, isolation, and recovery) as a peer module to the estimator and controller, not nested inside it, the same "mode manager as its own module" structure real flight software (NASA cFS, JPL's F prime) uses. It watches four conditions every cycle.
+
+- **Wheel authority lost.** Fewer than three healthy wheels (below the minimum needed to span 3-axis torque).
+- **Attitude uncertain.** The estimator's own tracked uncertainty exceeds a threshold, sustained for several seconds rather than tripping on one noisy cycle.
+- **Excess rate.** Body rate outside the controllers' tuned envelope, a higher-threshold anomaly backstop distinct from routine post-deployment detumbling.
+- **Low battery.** State of charge below a threshold.
+
+Faults **latch**. Once tripped, a fault stays flagged even if the underlying condition clears on its own, until an explicit ground command acknowledges it. That's deliberate. A wheel that happens to recover doesn't mean ops should stop knowing it failed once. When any fault is active, FDIR overrides the commanded pointing mode. Excess rate forces detumble outright, since nothing else converges cleanly at that rate. Everything else forces sun-pointing, the closest thing to a real safe mode: stable, doesn't depend on wheel count, tolerant of a degraded attitude estimate, and (not coincidentally) the attitude that also maximizes solar generation. Autonomy itself is ground-inhibitable, matching how real missions run fault detection logic during commissioning while keeping it from acting until it's trusted.
+
+## Mission lifecycle and pointing modes
+
+Tie determination, control, actuation, and fault management together and you get a lifecycle every three-axis stabilized satellite goes through.
+
+**Deploy, detumble, safe mode, nominal ops.** A satellite leaves its dispenser with real residual angular velocity, not zero. Once bias-corrected rate exceeds a threshold, the system autonomously enters detumble, reaction wheels if there's spare capacity, magnetorquers via B-dot otherwise, and exits automatically once rate damps below a lower hysteresis threshold (so it doesn't chatter at the boundary), reverting to sun-pointing as the default safe posture. From there FDIR decides whether nominal pointing modes are safe to resume.
+
+The **pointing mode catalog** nominal ops draws from:
+
+- **Sun-pointing.** The safe-mode default and the mode you fall back to whenever a mode-specific reference isn't available.
+- **Nadir.** Pointing at Earth's center, for imaging or nadir-facing instruments.
+- **Target.** Tracking a specific ground point or station.
+- **Slew.** Fast, coarse reorientation toward a new target, trading precision for speed.
+- **Inertial hold / fine pointing.** The opposite tradeoff: slow, tightly damped, precise holding once you're on target.
+- **Detumble.** Not really a "pointing" mode at all. It bypasses guidance entirely in favor of pure rate damping.
+
+Each mode gets its own controller tuning rather than one generic setting. Slew wants speed, fine pointing wants precision, and using the same gains for both means one of them is always wrong.
+
+## Mission application
+
+The reason to build a full closed-loop stack instead of a bare controller demo is that mission-specific guidance is where all of this actually pays off. This simulation includes one worked example beyond the standard pointing-mode catalog: a **mirror bisector guidance law**, aiming a body axis so a flat reflective surface bounces sunlight onto a ground target rather than pointing at anything directly. For a flat mirror, the normal that reflects a ray arriving from direction $\mathbf{u}$ into a ray leaving toward $\mathbf{v}$ is exactly the bisector of the two:
+
+$$
+\hat{n} = \widehat{\hat{u} + \hat{v}}
+$$
+
+with $\mathbf{u}$ the sun direction and $\mathbf{v}$ the target direction, both from the spacecraft. It's a genuinely different guidance problem than target pointing. The same estimation, control, allocation, and fault management stack underneath, but the reference direction itself is a function of two other directions rather than one fixed target. That's the real insight the sim is built to explore: swapping in a mission-specific guidance law is a small, self-contained change against the same closed-loop architecture, whether the mission is orbital beam steering (a Reflect Orbital style concept), a sustained high-accuracy pointing problem like a space-based solar power collector aiming a transmission aperture, or something else entirely. The estimator doesn't care what guidance is chasing. The controller doesn't care why the target moved.
+
+## Lessons learned
+
+Two bugs taught me more than anything that worked on the first try.
+
+The EKF's covariance update does raw matrix assignment every cycle with no symmetrization and no positive-semi-definiteness safeguard, all in 32-bit float. Running the spacecraft in a long, tightly converged sun-pointing hold, tens of thousands of propagate/correct cycles, reproducibly hit a hard NaN in the covariance, which propagated instantly into attitude and rate the same cycle. It never showed up during a large initial-error transient, only after a long, quiet hold, which is exactly the scenario no earlier test had run long enough to hit. The real fix (covariance symmetrization, a positive floor, or switching that state to double precision) is a genuine follow-up. The honest lesson was that "it's been stable for a while" is not the same claim as "it's stable," and my test suite needed to actually run that long to find out.
+
+The second was the sign convention bug already mentioned under actuator allocation. What made it dangerous wasn't that it was hard to fix (once found, it was a one-line flip). It's that it produced no error, no crash, just a slow, plausible-looking degradation that looked like a tuning problem until I went looking for it with a headless reproduction and traced the actual reaction-torque convention by hand. Both bugs reinforced the same thing: the failure modes that actually cost time in this kind of system aren't the ones that crash loudly, they're the ones that look like something else.

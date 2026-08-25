@@ -1,16 +1,6 @@
 ---
 title: "VGL"
 description: "A from-scratch C++/OpenGL 2D+3D rendering engine, a faster, more customizable alternative to pygame, with batched primitive rendering, GPU scalar-field visualization, and a configurable lighting model."
-tags:
-  [
-    "C++",
-    "OpenGL",
-    "GLSL",
-    "Computer Graphics",
-    "GLFW",
-    "CMake",
-    "Real-Time Rendering",
-  ]
 status: "active"
 featured: true
 order: 6
@@ -20,136 +10,91 @@ heroImage: "/images/projects/vgl.png"
 links: { github: "https://github.com/vcampos4545/VGL" }
 ---
 
-## Overview
+I was introduced to programming through Python, building simple games with pygame. Eventually I tried to simulate physics with it and ran straight into pygame's performance ceiling. Everything it draws is blitted on the CPU, one pixel operation at a time, and that stops scaling the moment you want more than a few hundred moving things on screen. I'd also always been fascinated by how computers actually work, the interaction between CPU and GPU, and how a frame of graphics really gets built. So I wanted real experience with a low-level graphics API, OpenGL, writing shaders from scratch, but I wanted to end up with something as easy to reach for as pygame was. That's what became [VGL](https://github.com/vcampos4545/VGL).
 
-VGL is a rendering engine built directly on OpenGL and GLSL, an attempt to
-recreate what pygame gives you (a simple, immediate-mode draw API for
-circles, rects, lines, sprites, an event loop) but backed by a compiled
-language and the GPU instead of pygame's CPU-bound software blitting. It
-splits into two faces on a shared `GUI` window/input/context layer: a 3D
-immediate-mode API (spheres, boxes, cylinders, OBJ meshes, an orbital camera)
-and a 2D API purpose-built for CFD-style scientific visualization (batched
-lines/points/polygons plus GPU colormap rendering of scalar fields). It's the
-rendering layer under a separate
-[rigid-body physics project](/projects/spacecraft-dynamics-simulation)'s six
-example scenarios, and standalone for 2D flow-field visualization.
+## How a GPU actually draws something
 
-## Problem
+Before getting into VGL specifically, it's worth being precise about what a GPU is doing when you ask it to draw a triangle, because the whole reason "shaders" exist falls out of this. The GPU rendering pipeline is a fixed sequence of stages, some of them programmable.
 
-pygame is a reasonable default for quick 2D visualization, but it's
-software-rendered and CPU-bound. Every primitive is blitted on the CPU, so
-frame time scales directly with how much you draw, with no path to the GPU
-for shaders, instancing, or hardware colormap rendering of a scalar field.
-For CFD-style visualization work, thousands of particles, dense line fields,
-per-cell scalar data, that ceiling shows up fast. Building on raw OpenGL
-instead meant solving the problems pygame solves for you (windowing, input,
-an immediate-mode-feeling draw API) while keeping every draw call
-GPU-driven:
+1. **Vertex processing.** Every vertex you submit runs through a small program (the vertex shader) that transforms it, typically from model space into clip space via a chain of matrices.
+2. **Primitive assembly and rasterization.** The GPU groups transformed vertices back into triangles (or lines, or points) and figures out which pixels each triangle covers. Fixed function, not programmable.
+3. **Fragment processing.** Every covered pixel ("fragment") runs through another small program (the fragment shader) that decides its final color, using whatever was interpolated across the triangle from the vertex stage.
+4. **Output merging.** Depth testing, blending, and finally writing to the framebuffer. Mostly fixed function again.
 
-- A 2D primitive API that reads like pygame's (`drawLine`, `drawCircle`,
-  `addPoint`) but batches everything into as few draw calls as possible
-- GPU-resident scalar-field rendering (velocity, pressure, vorticity fields
-  as a texture, colormapped in a fragment shader) instead of reading data
-  back to the CPU to draw it
-- A 3D side (meshes, materials, lighting, OBJ import) for physics-sim
-  visualization, sharing the same window/input/camera plumbing as the 2D API
-- Keeping the whole thing dependency-light (GLFW, GLM, GLEW, stb_image) and
-  buildable as a plain CMake static library
+The two stages you actually write code for are the vertex and fragment shaders, and that's the entire reason "writing shaders" is synonymous with "graphics programming" at this level. Everything else in the pipeline is the GPU doing fixed, hardware-accelerated work you don't control directly.
 
-## Technical Architecture
+## Shaders, concretely
 
-- **`GUI`.** Owns the GLFW window, GL context, keyboard/mouse state, and the
-  3D immediate-mode draw API (`drawSphere`, `drawBox`, `drawCylinder`,
-  `drawOBJMesh`, an infinite ray-cast ground plane, a logarithmic depth
-  buffer for scenes spanning huge distances, since orbital mechanics is what
-  it was built for).
-- **`Renderer2D`.** A facade over `GUI` adding an orthographic `Camera2D` and
-  the 2D API. `LineBatch2D` and `PointBatch2D` accumulate every
-  `drawLine`/`addPoint` call for a frame into a CPU-side vector, then upload
-  once and issue a single draw call for all points, a shared unit-circle mesh
-  instanced per point via `glVertexAttribDivisor`, so thousands of primitives
-  cost one or two draw calls.
-- **`DataTexture` + colormap shader.** Scalar field data (a CFD pressure or
-  vorticity grid, say) uploads straight into an `R32F`/`RG32F` texture; a
-  fragment shader maps it through a colormap (Viridis, Jet, CoolWarm,
-  Grayscale, Fire) entirely on the GPU, with optional contour lines and a
-  solid-mask overlay for obstacles. No per-pixel CPU work.
-- **`Mesh` / `OBJMesh`.** Procedural primitive generators (circle, quad,
-  cube, sphere, cylinder) plus a `.obj`/`.mtl` loader that triangulates
-  n-gon faces and groups submeshes by material.
-- **`Framebuffer`.** Render-to-texture for post-processing and offscreen
-  passes, generalized to a single reusable class across float and
-  8-bit-per-channel targets.
+A shader is a small program, written in GLSL (OpenGL Shading Language, C-like syntax), that runs once per vertex or once per fragment, but runs on thousands of vertices or millions of fragments simultaneously, across the GPU's parallel cores. That massive parallelism, not raw clock speed, is what makes GPU rendering fast. pygame's software rasterizer processes pixels on one CPU core in sequence. A GPU fragment shader processes an entire screen's worth of pixels essentially at once.
 
-## Implementation Details
+Here's VGL's actual default vertex shader, trimmed slightly:
 
-Two performance issues came up while extending the engine, worth noting
-because neither shows up in a quick correctness check. Both only cost
-anything once a scene draws a lot per frame.
+```glsl
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
 
-**Uniform lookups on every `set*` call.** `Shader::setMat4`/`setFloat`/etc.
-were calling `glGetUniformLocation(id, name)`, a driver-side string lookup,
-on every single call, every frame, for every draw. Fixed with a `name to
-GLint` cache on `Shader`, invalidated on program relink, so every uniform
-name now resolves once per program's lifetime instead of once per frame.
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
 
-**GPU object churn in immediate-mode line drawing.** `GUI::drawLine`/
-`drawArrow` routed through a `Mesh::uploadLines()` call that destroyed and
-recreated the VAO/VBO from scratch on every single line drawn. Fine for one
-debug line, expensive for a frame full of vector-field arrows. Rewritten to
-match the pattern already used by `LineBatch2D`/`PointBatch2D`: allocate
-once, grow the buffer with headroom only when a frame needs more capacity,
-and `glBufferSubData` into the existing allocation otherwise.
+out vec3 FragPos;
+out vec3 Normal;
 
-## Challenges
+void main() {
+  vec4 worldPos = model * vec4(aPos, 1.0);
+  FragPos = worldPos.xyz;
+  Normal  = mat3(transpose(inverse(model))) * aNormal;
+  gl_Position = projection * view * worldPos;
+}
+```
 
-The most instructive bug wasn't a crash. It was "why does every 3D scene
-look almost black except directly facing the light." The fragment shader had
-a single hardcoded `ambient = 0.15` constant and one directional light. Any
-face angled away from that light dropped to 15% brightness with nothing to
-fill it in, and there was no way to configure it beyond rotating the light
-direction. Worse, `OBJMesh` was already parsing `Ka`/`Ks`/`Ns`
-(ambient/specular/shininess) out of `.mtl` files into a `Material` struct.
-The data was there, the shader just never read it, so every object got the
-same fixed shininess and specular regardless of what its material actually
-specified.
+Every vertex gets carried through three matrices: model (object space to world space), view (world space to camera space), projection (camera space to clip space). The result, `gl_Position`, is what rasterization actually uses. The normal gets its own transform, the inverse-transpose of the model matrix rather than the model matrix itself, because a non-uniform scale would otherwise skew normals off-perpendicular from the surface they belong to, a classic graphics gotcha that's easy to get wrong once and then never think about again.
 
-The fix had two parts: replace the flat ambient constant with a hemisphere
-ambient (a sky color and a ground color, blended by how much a surface
-normal faces up) so backfaces pick up a believable fill instead of going
-flat dark, and thread the already-parsed `Material` into the shader as real
-per-object uniforms, plus a `lit` flag so any object can opt out of lighting
-entirely for a flat-shaded look. Getting from "the light direction must be
-wrong" to "the ambient model itself has no fill term" was the part that
-actually took investigation. Once diagnosed, the shader and API changes were
-mechanical.
+The fragment shader is where per-pixel shading actually happens. VGL's default lighting model is Blinn-Phong: diffuse light proportional to the angle between the surface normal and the light direction, plus a specular highlight from the half vector between light and view direction.
 
-## Results
+$$
+I = k_a + (\hat{n}\cdot\hat{l})\, + \left(\hat{n}\cdot\hat{h}\right)^{s}
+$$
 
-The engine now renders both the 3D physics-sim scenes and the 2D CFD-style
-visualizations through the same window/input layer, with every hot path
-doing work proportional to changed data per frame rather than to driver
-calls or redundant lookups. Lighting is configurable per-scene and
-per-object, with `.mtl`-authored materials actually affecting the render
-instead of being parsed and discarded.
+Here $\hat{h} = \widehat{\hat{l} + \hat{v}}$ is the halfway vector between the light direction $\hat{l}$ and the view direction $\hat{v}$, and $s$ is a shininess exponent controlling how tight the highlight is. It's an approximation of real light transport, not a physically based renderer, but it's cheap (a couple of dot products per pixel) and looks convincing enough for real-time work, which is exactly the tradeoff every real-time shading model is making somewhere.
 
-## Lessons Learned
+## What OpenGL actually is
 
-Batching and buffer-reuse patterns are easy to get right once, in one place,
-and easy to forget to apply everywhere else that looks similar.
-`LineBatch2D` had the right growable-buffer pattern from the start, but a
-separate, older immediate-mode line path in `GUI` didn't, because it
-predated the batch renderers and nobody went back to reconcile them.
-Configurability also rots quietly: `OBJMesh` gained `Material` parsing
-before the shader had any uniforms to receive it, so the data sat unused for
-a while with no error or warning, the kind of gap that only surfaces when
-someone reads both sides of an interface at once instead of just the side
-they're currently changing.
+It's worth clarifying something that isn't obvious walking in. OpenGL isn't a library you link against the way you'd link, say, a math library. It's a **specification**, a defined API surface and a state machine, that your GPU vendor implements as a driver. When you call an OpenGL function, you're not calling into portable code that runs the same everywhere. You're calling into NVIDIA's, AMD's, Intel's, or Apple's own driver implementation of that spec, and behavior at the margins (extension support, exact precision, even some bugs) genuinely differs between them.
 
-## Future Work
+That also means OpenGL by itself doesn't create a window, read keyboard input, or load its own function pointers. That's explicitly out of scope for the spec, and it's why every real OpenGL project reaches for a couple of companion libraries. VGL uses **GLFW** for windowing, input, and OpenGL context creation (the thing that actually hands you a working, current OpenGL context to issue draw calls into), and **GLEW** to load the actual function pointers for anything beyond OpenGL's oldest fixed baseline. Modern OpenGL functions aren't guaranteed to be linkable symbols at compile time. They're resolved at runtime against whatever the driver actually exposes. None of that is specific to VGL. It's the standard shape every raw-OpenGL project takes, and understanding why each piece exists (spec versus driver versus windowing versus function loading) makes the whole ecosystem make a lot more sense than just copying a boilerplate setup.
 
-- Text rendering (FreeType or stb_truetype) for on-screen debug/UI overlays
-- Frustum culling, since every object currently renders regardless of visibility
-- Multiple/shadow-casting lights beyond the current single directional light
-- Migrate GLEW to glad for a more modern, minimal extension loader
-- Split `GUI`'s window/input/render responsibilities into separate classes
+## How different OSes actually handle graphics
+
+This part surprised me the most going in, because it's easy to assume "OpenGL" means the same thing everywhere. It doesn't, and the differences are almost entirely a story about who owns the driver.
+
+- **Linux.** Mostly open. **Mesa** provides open-source OpenGL drivers for AMD and Intel GPUs, communicating with the kernel's DRM/KMS graphics stack. NVIDIA instead ships its own proprietary driver. Either way, GLFW talks to the windowing system (X11 or Wayland) underneath, and OpenGL support is generally current and well maintained.
+- **Windows.** Vendor owned. NVIDIA, AMD, and Intel each ship their own OpenGL implementation as part of their standard graphics driver (an "ICD," installable client driver), sitting alongside, not replaced by, Direct3D, Microsoft's own competing graphics API that most AAA Windows games actually target instead.
+- **macOS, and specifically Apple Silicon.** This is the interesting one. Apple **deprecated OpenGL** back in 2018 (macOS Mojave) in favor of their own API, **Metal**, and hasn't shipped a new OpenGL version since. macOS is permanently capped at OpenGL 4.1, itself already over a decade old. On Apple Silicon there's no native hardware OpenGL driver at all anymore. Apple's own OpenGL framework is a translation layer sitting on top of Metal, not a first-class driver path. It still works, and VGL runs on it fine, but it's genuinely the least native path on any of the three platforms. Every OpenGL call is ultimately being reinterpreted into Metal calls, one abstraction removed from the actual GPU driver, unlike Linux and Windows, where OpenGL drivers talk to the hardware directly.
+
+Practically, this means a raw-OpenGL renderer like VGL is guaranteed a working baseline everywhere via GLFW, but on Apple Silicon it's running on borrowed time architecturally, not just older-spec-version time. If I ever wanted VGL's newest features or best performance on a Mac, the honest long-term answer is a Metal backend, not a newer OpenGL version that Apple isn't going to ship.
+
+## Designing the API: pygame's feel, the GPU's throughput
+
+The actual design goal was recreating pygame's `drawLine`/`drawCircle` immediate-mode feel without recreating its CPU bottleneck. The trick is that "immediate mode" only has to be true from the caller's perspective. VGL's `LineBatch2D`/`PointBatch2D` accumulate every draw call made during a frame into a CPU-side buffer, then upload once and issue a single GPU draw call for the whole batch, using `glVertexAttribDivisor` to instance a shared unit-circle mesh once per point rather than generating unique geometry per primitive. The caller writes `drawLine(...)` a thousand times per frame and it feels immediate mode. The GPU sees one draw call.
+
+The other half of the 2D side is built for CFD-style scalar-field visualization, velocity, pressure, vorticity grids, which is a genuinely different problem from drawing shapes. `DataTexture` uploads the raw scalar grid straight into a floating-point GPU texture, and a fragment shader maps every pixel through a colormap (Viridis, Jet, CoolWarm) entirely on the GPU. No per-pixel CPU work at all, which is the only way that kind of visualization stays real-time once the grid gets large. Reading the field back to the CPU to color it by hand would put you right back into pygame's bottleneck, just with extra steps.
+
+## Performance lessons that don't show up in a correctness check
+
+Two bugs taught me that "it draws the right thing" and "it draws the right thing fast" are genuinely separate bars to clear, and the gap between them doesn't show up until a scene gets busy.
+
+**Uniform lookups on every draw.** `Shader::setMat4`/`setFloat` were calling `glGetUniformLocation(id, name)`, a driver-side string lookup by name, on every single call, every frame, for every draw. It's correct, and invisible in a scene with a handful of objects. It becomes a real cost once a frame is issuing hundreds of these lookups per draw call. The fix was a `name to GLint` cache on `Shader`, invalidated only when the program relinks, so each uniform name resolves once per program's lifetime instead of once per frame.
+
+**GPU object churn in immediate-mode line drawing.** `GUI::drawLine`/`drawArrow` were destroying and recreating the underlying VAO/VBO from scratch on every single call. Fine for one debug line, expensive for a frame full of vector-field arrows. I rewrote it to match the pattern the batch renderers already used: allocate once, grow the buffer with headroom only when a frame actually needs more capacity, and `glBufferSubData` into the existing allocation otherwise. Both bugs share a shape worth naming. The code was correct and the API looked identical from the outside. The cost was purely in how often the GPU boundary got crossed, which is exactly the kind of thing a quick correctness check will never catch.
+
+## The bug that taught me the most: it wasn't a crash
+
+The most instructive problem I hit wasn't a crash. It was "why does every 3D scene look almost black except directly facing the light." The fragment shader had a single hardcoded `ambient = 0.15` constant and one directional light. Any face angled away from that light dropped to 15% brightness with nothing to fill it in, and there was no way to configure it beyond rotating the light itself. What made it take real investigation: `OBJMesh` was already parsing `Ka`/`Ks`/`Ns` (ambient, specular, shininess) out of `.mtl` material files into a `Material` struct. The data was there. The shader just never read it. Every object got the same fixed shininess and specular regardless of what its actual material specified, so my first instinct ("the light direction must be wrong") was chasing the wrong layer entirely.
+
+The real fix had two parts: replace the flat ambient constant with a hemisphere ambient term (a sky color and a ground color blended by how much a surface normal faces up) so backfaces pick up a believable fill instead of going flat dark, and actually thread the already-parsed `Material` struct into the shader as real per-object uniforms, plus a `lit` flag so an object can opt out of lighting entirely for a flat-shaded look. Getting from "the light must be positioned wrong" to "the ambient model has no fill term at all, and unrelated to that, the material data is being silently discarded" was the part that actually took time. Once correctly diagnosed, the shader and API changes themselves were mechanical.
+
+## Lessons learned
+
+Batching and buffer-reuse patterns are easy to get right once, in one place, and easy to forget to apply everywhere else that looks similar. `LineBatch2D` had the right growable-buffer pattern from the start. A separate, older immediate-mode line path in `GUI` didn't, purely because it predated the batch renderers and nobody went back to reconcile the two. Configurability rots quietly the same way. `OBJMesh` gained real `Material` parsing before the shader had any uniforms to actually receive it, so the data sat parsed but unused for a while with no error or warning, the kind of gap that only surfaces when someone reads both sides of an interface at once, instead of just the side they're currently changing. Both are the same underlying lesson from two different angles. A change that's locally correct can still leave the system inconsistent, and finding that requires deliberately going looking, not waiting for a crash to point at it.

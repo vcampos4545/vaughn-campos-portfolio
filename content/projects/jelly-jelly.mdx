@@ -1,7 +1,6 @@
 ---
 title: "Jelly Jelly"
-description: "Real-time video streaming iOS app and web platform, built end-to-end as a full stack engineer at SmallTalk."
-tags: ["Swift", "iOS", "LiveKit", "WebRTC", "AWS", "Supabase", "Next.js"]
+description: "Real-time video streaming iOS app and web platform, built end-to-end as a full stack engineer at SmallTalk, the studio behind JellyJelly."
 status: "completed"
 featured: true
 order: 1
@@ -11,36 +10,36 @@ heroImage: "/images/projects/jellyjelly.png"
 links: { demo: "https://jellyjelly.com" }
 ---
 
-## Overview
+Every person I talk to who's old enough to remember it misses Vine. It was candid content, six seconds, nobody obsessing over view counts or optimizing for an algorithm, just people being funny or strange or real for a few seconds at a time. It felt like the internet before the internet figured out how to monetize your attention. I spent two years as a full stack engineer at SmallTalk building JellyJelly, and the entire premise of the product was trying to get some of that back, in an era where it's genuinely gotten hard to tell whether anything you're looking at online is real.
 
-Jelly Jelly is a real-time video streaming app, built during my two years as
-a Full Stack Software Engineer at SmallTalk. I worked across the entire
-stack: a native iOS app, the backing cloud infrastructure, and the real-time
-video pipeline connecting them, taking the product from early development
-through a public App Store release.
+## What JellyJelly was trying to solve
 
-## Technical Architecture
+We're at a point where AI can generate a convincing photo, voice, or video of almost anything, and social feeds are full of content that's been shot, cut, filtered, and re-shot until it barely resembles a real moment anymore. Both of those problems point at the same underlying question: is this actually real, or not. JellyJelly's answer was a hard technical constraint, not a marketing claim. What you record in the app is what gets posted. No editing, no cuts, no retakes, no post-processing pipeline sitting between the camera and the feed. A "jelly" is recorded from both the front and back camera at once, so you get the person and what they're actually looking at in the same clip, and it goes up exactly as captured.
 
-- **Real-time video pipeline.** Built on LiveKit's WebRTC infrastructure,
-  handling low-latency media transport, multi-client synchronization, and
-  event-driven state management shared across web and mobile.
-- **iOS app (Swift).** Developed end-to-end and shipped to the App Store,
-  including concurrent background processing and direct hardware camera
-  integration for streaming.
-- **Cloud infrastructure (AWS).** S3, Lambda, and EC2, with automated CI/CD
-  deployment for the backend services.
-- **Data layer (Supabase/Postgres).** Real-time data synchronization for live
-  app state, backed by PostgreSQL for analytics.
+That constraint sounds simple but it's a real product decision with real technical consequences, because it means you can't build the app the way most video apps get built, with an editor, a draft state, and a publish step that assumes the user will polish things before they go live. Recording has to lead directly to a finished, watchable post, which pushed a lot of complexity into the pipeline that turns a raw capture into something that streams well on a phone on bad cellular, covered later on.
 
-## Implementation Details
+## A bit of history
 
-Once a recording finishes, whether it came from a local on-device capture or
-a LiveKit-hosted room, the raw file lands in S3. That upload triggers an
-FFmpeg encoding job rather than serving the raw file directly: the source
-gets transcoded into multiple quality renditions in parallel and packaged as
-HLS, segmented `.ts` chunks plus an `.m3u8` playlist per rendition, so a
-client can start playback quickly and step between qualities as bandwidth
-changes instead of committing to one fixed bitrate. The resulting HLS output
-is what actually gets served through the CDN, keeping playback smooth across
-uneven mobile network conditions without the client ever handling a single
-giant video file.
+JellyJelly comes out of the team behind Venmo. Iqram Magdon-Ismail, a Venmo co-founder, leads it, alongside Sam Lessin, an early Venmo investor, and the team is spread across New York, LA, and Las Vegas. The pitch has always been the same one I opened with: current feeds feel fake and like a time-suck, and the goal is the fastest, realest way to post a moment, something closer to how BeReal or, further back, Vine, actually felt to use.
+
+The other half of what JellyJelly was trying to fix was who controls the money. Instagram and TikTok run genuinely black box payment models. Creators don't know exactly how they're being valued, how the algorithm is weighting their reach, or why one video pays out and a similar one doesn't. We wanted creators to have real authority over how they get paid instead of trusting an opaque formula, so the team built a token directly into the app, JellyMyJelly, on Solana, letting the community tip creators directly and giving JellyJelly a "post to earn" model instead of a black box ad-revenue split. It launched in January 2025 and it is not an exaggeration to say it took the crypto world by storm. Within about a week it had rocketed past nine figures in market cap, and it drove a genuinely enormous amount of signups and attention to the app in the process. Like most tokens born out of that kind of launch velocity, it's cooled down a lot since, which is its own honest lesson about how much of that early number was durable value versus launch hype, but the underlying idea, giving creators a direct, transparent stake instead of a platform's opaque payout formula, was the actual point, not the peak market cap number.
+
+## What I actually built
+
+I worked across the entire stack over those two years, from early development through the public App Store release: the native iOS app, the cloud infrastructure behind it, and the real-time video pipeline connecting the two.
+
+- **Real-time video pipeline.** Built on LiveKit's WebRTC infrastructure, handling low-latency media transport, multi-client synchronization, and event-driven state shared across web and mobile, which is what makes the dual front and back camera capture actually work as one synchronized recording instead of two separate streams.
+- **iOS app (Swift).** Developed end-to-end and shipped to the App Store, including concurrent background processing and direct hardware camera integration for streaming both camera feeds at once without dropping frames.
+- **Cloud infrastructure (AWS).** S3, Lambda, and EC2, with automated CI/CD deployment for the backend services.
+- **Data layer (Supabase/Postgres).** Real-time data synchronization for live app state, backed by PostgreSQL for analytics.
+
+The part I'm proudest of is the pipeline that actually gets a raw recording in front of another user's eyes. Once a recording finishes, whether it came from a local on-device capture or a LiveKit-hosted room, the raw file lands in S3. That upload triggers an FFmpeg encoding job rather than serving the raw file directly. The source gets transcoded into multiple quality renditions in parallel and packaged as HLS, segmented `.ts` chunks plus an `.m3u8` playlist per rendition, so a client can start playback quickly and step between qualities as bandwidth changes instead of committing to one fixed bitrate. The resulting HLS output is what actually gets served through the CDN, keeping playback smooth across uneven mobile network conditions without the client ever handling a single giant video file. It's the piece of infrastructure that makes "record it once, post it exactly as recorded" actually feel instant and reliable to a user standing somewhere with two bars of signal, which, given the whole premise of the app was raw, unedited moments, was the part that genuinely could not be allowed to feel slow or broken.
+
+## Reflecting on it
+
+Two years there taught me that the technical and product stories were never really separate. The no-editing constraint wasn't just a philosophy statement, it was a real engineering requirement that shaped the entire pipeline, and the token wasn't just a marketing stunt, it was an actual attempt to answer a real complaint creators have about every major platform. Whether either fully succeeds long term is still an open question, crypto hype cycles cool off and authenticity is a hard thing to hold onto at scale, but building both at once, at a company trying to bring back something like what Vine used to be, was one of the more interesting problems I've gotten to work on.
+
+Sources:
+- [About JellyJelly](https://jellyjelly.com/about)
+- [Are you ready for this JellyJelly? Venmo co-founder's new app is TikTok meets BeReal with a memecoin twist (Tubefilter)](https://www.tubefilter.com/2025/03/20/are-you-ready-for-this-jellyjelly-venmo-co-founders-new-app-is-tiktok-meets-bereal-with-a-memecoin-twist/)
+- [Jelly-My-Jelly (JELLYJELLY) price and market data (CoinGecko)](https://www.coingecko.com/en/coins/jelly-my-jelly)

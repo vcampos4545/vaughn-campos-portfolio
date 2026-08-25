@@ -1,14 +1,6 @@
 ---
 title: "Spacecraft Dynamics Simulation"
 description: "A lightweight C++ rigid-body physics library with a composable joint system, built around spacecraft example scenarios."
-tags:
-  [
-    "C++",
-    "Rigid Body Dynamics",
-    "Constraint Solvers",
-    "Quaternion Mathematics",
-    "Control Systems",
-  ]
 status: "completed"
 featured: true
 order: 3
@@ -26,90 +18,74 @@ media:
   ]
 ---
 
-## Overview
+I've always been fascinated by physics and by modeling the world around me, so at some point building my own simulated world felt inevitable. That's what became [rigidbody](https://github.com/vcampos4545/spacecraft-dynamics-sim), a general-purpose rigid-body physics engine, but with my actual passion, aerospace, mixed in from the start. It started life as one monolithic spacecraft simulator and grew into something closer to a real physics library, and along the way I ended up learning a lot more about integration schemes, collision geometry, and constraint solving than I expected to. This is a walk through how it actually works.
 
-A general-purpose rigid-body physics library in C++, built around a small set
-of composable joint primitives and a from-scratch collision/constraint
-solver, with spacecraft scenarios in mind.
+## What a rigid-body engine has to model
 
-## Problem
+At its core, a rigid body has two kinds of motion to track: translational (position, velocity, mass) and rotational (orientation, angular velocity, and, the part that actually makes this hard, inertia, which isn't a single number once a body isn't spherically symmetric). The translational side is genuinely easy. Newton's second law, integrate acceleration into velocity, velocity into position, done. The rotational side is where almost all of the real complexity in this project lives, because inertia is a full 3x3 tensor that depends on orientation, and because there's no flat vector space to represent orientation in without hitting a singularity somewhere.
 
-This started out as one monolithic spacecraft simulator: orbital mechanics,
-attitude propagation, and a fixed flight-software stack all built into a
-single engine. That was fine for what I originally wanted, messing around
-with attitude controllers, but it didn't generalize at all. Physics code and
-spacecraft-specific code were tangled together, so anytime I wanted to reuse
-the engine for something else I ended up fighting assumptions I'd baked in
-on day one. The joint system had the same problem, just one ad hoc fixed
-joint and a rope constraint, no shared structure between them.
+## Rotational dynamics
 
-Making it actually reusable meant:
+Orientation here is a quaternion, not Euler angles, for the same reason it shows up throughout aerospace software generally. Euler angles have a gimbal lock singularity where two rotation axes align and a degree of freedom collapses, and quaternions don't have that problem while composing cheaply.
 
-- Separating the physics engine from spacecraft-specific gravity models and
-  flight software, so it could simulate any rigid body, not just a satellite
-- Replacing the one-off joints with a small, standard set of constraint
-  primitives that share their underlying math instead of duplicating it
-- A way to validate constraint behavior precisely, rather than eyeballing it
-  in the viewer
+The classical physics for rotation is Euler's rigid-body equation,
 
-## Technical Architecture
+$$
+I\dot{\boldsymbol{\omega}} + \boldsymbol{\omega}\times(I\boldsymbol{\omega}) = \boldsymbol{\tau}
+$$
 
-It's now split into a physics library and a set of examples that use it:
+which in body frame includes that cross-product "gyroscopic" term, the reason a spinning top precesses instead of just falling over. This engine takes a more practical shortcut that's common in real-time physics. Rather than integrate the body-frame equation with its cross term explicitly, it recomputes the world-frame inverse inertia tensor from the current orientation every step ($I_{world}^{-1} = R\, I_{body}^{-1}\, R^{T}$) and applies torque directly as world-frame angular acceleration, $\dot{\boldsymbol{\omega}} = I_{world}^{-1}\boldsymbol{\tau}$. It's semi-implicit (symplectic) Euler throughout: velocity updates from the current step's acceleration, then position and orientation update from the just-updated velocity, which is unconditionally more stable than the naive explicit-Euler order for oscillatory systems. Skipping the explicit gyroscopic term is a real simplification, not free lunch. It won't fully reproduce the exotic torque-free-precession instability of a wildly asymmetric body (the "tennis racket theorem"), but for the composite, close-to-well-conditioned inertia tensors every spacecraft in this project actually has, it's an accurate and dramatically simpler integration than a naive forward-Euler pass on the body-frame equation, which is well known to blow up numerically without much smaller timesteps than this needs.
 
-- **`rigidbody` (the library).** `RigidBody` (box/sphere/cylinder/cone,
-  mass/inertia from density or mass, GJK+EPA convex collision), `PhysicsWorld`
-  (fixed-timestep Sequential-Impulse solver, 120 Hz), and a constraint system:
-  `FixedConstraint`, `PointConstraint`, `HingeConstraint`, and
-  `SliderConstraint`, each removing a specific set of the 6 relative degrees
-  of freedom between two bodies, built from shared solver blocks so a new
-  joint is an assembly of existing pieces, not a rewrite. A
-  `DistanceConstraint` (rope/string) covers the one case the other four can't
-  express. Actuators (`ReactionWheel`, gimbaled `Thruster`) are physical
-  primitives attached to a body, independent of any specific vehicle. The
-  library has zero rendering dependency and builds standalone via CMake.
-- **Examples.** Six self-contained scenarios, rendered with a small custom
-  OpenGL layer ([VGL](https://github.com/vcampos4545/VGL)), that each define a
-  vehicle from the library's primitives and write their own flight software: a
-  cubesat with a full PID/LQR/cascaded attitude-control stack, a multi-body
-  Falcon 9 with in-flight staging, a Calder mobile, two independently
-  deployable solar panels, a rigid chain, and a telescoping antenna boom.
+Quaternion kinematics themselves are
 
-## Implementation Details
+$$
+\dot{q} = \tfrac{1}{2}\, q \otimes (0,\boldsymbol{\omega})
+$$
 
-Collision between arbitrary convex shapes runs through GJK for intersection
-and EPA for contact resolution, feeding a Sequential-Impulse solver with
-Baumgarte position-error correction shared across every constraint type.
-Attitude is represented with quaternions throughout, renormalized after each
-integration step to keep drift from creeping in, with Euler's rigid-body
-equation driving angular dynamics under applied and disturbance torques.
+and every step renormalizes $q$ afterward. Floating point error accumulates in the integration regardless of how careful the math is, and an unrenormalized quaternion silently stops representing a valid rotation at all.
 
-The cubesat example's flight software is a pretty literal pipeline: guidance
-computes a target attitude, control (PID, LQR, or cascaded rate/attitude,
-pick one at runtime) acts on it, and actuator allocation turns that into
-individual reaction-wheel commands through the wheel configuration's
-pseudo-inverse. All of that lives in the example, not the engine, so I can
-swap controllers without ever touching physics code.
+## Collision detection: GJK and EPA
 
-## Challenges
+Two convex shapes might be overlapping. If they are, something needs a contact normal and penetration depth to resolve it. That's actually two separate questions, and this engine, like most serious physics engines, uses two separate algorithms to answer them.
 
-The bug that taught me the most here wasn't actually new, it was a latent
-issue the constraint refactor happened to expose. A welded rocket nose cone
-stopped rigidly tracking the rocket body under thrust and started visibly
-spinning away from it over a few seconds. My first guess was Baumgarte
-overcorrection, so I clamped the correction term. Didn't change a thing,
-bit-for-bit identical across a 5-second reproduction.
+**GJK** (Gilbert-Johnson-Keerthi) answers only the yes/no question, do these two convex shapes intersect, using nothing but each shape's support function (the furthest point on the shape in a given direction). It builds a simplex inside the Minkowski difference of the two shapes, iteratively refining it toward the origin. If the simplex ever encloses the origin, the shapes overlap. It never needs to know the shapes' actual geometry beyond that one support query, which is what makes it general across boxes, spheres, cylinders, and cones with the same code.
 
-That killed my first theory right away, which is exactly why I'd built a
-headless reproduction in the first place: a small standalone program with
-the real rocket and nose-cone masses, no GUI, just printing orientation
-state every physics step. Running it with `beta = 0` (no position correction
-at all) gave the exact same divergence, so the Baumgarte term was never the
-problem. Once I instrumented the solver directly, the real cause showed up:
-a Cramer's-rule linear solve using an absolute numerical singularity
-threshold (`|determinant| < 1e-10`). A 549-tonne rocket's inverse inertia is
-naturally tiny in SI units, so the rotational constraint's determinant fell
-under that threshold even though the matrix was perfectly well-conditioned.
-The rotational correction was quietly returning zero every step at that mass
-scale, while the translational half kept working fine and kept feeding a
-little unopposed angular velocity into the cone every frame. No crash, no
-error, it just silently did nothing, and only at that one mass scale.
+**EPA** (Expanding Polytope Algorithm) picks up from there. Given the terminal simplex GJK left behind, now known to enclose the origin, it iteratively expands that simplex into a polytope, walking toward the Minkowski difference's actual boundary, until it converges on the closest face to the origin. That face's normal and distance are the contact normal and penetration depth. Splitting the problem this way is the standard approach precisely because the two questions have different natural answers. GJK's simplex refinement is a cheap terminating search for existence, while EPA's polytope expansion is a genuinely more expensive geometric refinement you only want to pay for once you already know you need it.
+
+## The constraint system
+
+A constraint removes some subset of the six relative degrees of freedom between two bodies (three translational, three rotational). Framing it that way makes the whole constraint system fall out as compositions of the same idea.
+
+| Constraint | DOF removed | DOF free | Real use |
+|---|---|---|---|
+| Fixed (weld) | 6 | 0 | Nose cone bolted to a rocket body |
+| Point (ball socket) | 3 | 3 rotational | Rope/chain links, ragdolls |
+| Hinge (revolute) | 5 | 1 rotational | Deployable solar panel |
+| Slider (prismatic) | 5 | 1 translational | Telescoping antenna boom |
+| Distance | n/a | anchors held at a target distance | Rope/strut, optionally unilateral (a string) |
+
+The first four share their underlying solver math deliberately. A Fixed constraint is a Point constraint plus a full orientation lock. A Hinge is a Point constraint plus a two DOF axis-alignment lock. A Slider is a full orientation lock plus a two DOF perpendicular-translation lock. That means a more elaborate joint doesn't need new solver code, just a new composition. A universal joint is two Hinge constraints sharing a pivot with perpendicular axes. A cylindrical joint is a Hinge and a Slider sharing an axis. Distance is the one genuine outlier, because "held at a target distance" (optionally one directional, like a string that goes slack but can't stretch) isn't expressible as a DOF removal at all. It's a different kind of constraint on the anchor separation itself, not on relative pose.
+
+Hinge and Slider both optionally add a hard angle or position limit and a velocity-servo motor on top of the bare joint, which is what turns "two bodies that can rotate about a shared axis" into "a solar panel that deploys to 90 degrees and holds," or a hinge limit plus a motor driving toward it.
+
+## Solving it: Sequential Impulse and Baumgarte stabilization
+
+Every active constraint plus every active contact needs to be satisfied simultaneously, and solving that as one exact linear system every step is expensive and doesn't scale well as more bodies and constraints get added. The practical alternative, what this engine uses, and what most real-time physics engines use, is **Sequential Impulse**: iterate over every constraint some fixed number of times per step (10, here), applying a corrective impulse to satisfy each one in turn. Because satisfying one constraint can slightly perturb another that was already satisfied, this doesn't converge to an exact solution in one pass. It converges toward one over the iteration count, which in practice is good enough at real-time rates and is exactly the tradeoff that makes many-body scenes tractable at all.
+
+Iterating on velocity alone still leaves a subtler problem: small positional errors between the constrained bodies drift in gradually, since velocity-level correction doesn't know about accumulated position error. **Baumgarte stabilization** fixes this by feeding a fraction of the current position error back in as an extra corrective velocity term, scaled by a coefficient $\beta$ (typically 0.1 to 0.2 in this project), high enough to correct drift over a reasonable number of steps, low enough not to overshoot and introduce its own instability at this iteration count.
+
+This is also where I hit the most instructive bug in the whole project. A welded rocket nose cone stopped rigidly tracking the rocket body under thrust and started visibly spinning away from it over a few seconds. My first guess was Baumgarte overcorrection, so I clamped the correction term. No change at all, bit-for-bit identical across a repeated run. That ruled out Baumgarte immediately, which is exactly why I'd built a small headless reproduction first: just the real rocket and nose-cone masses, no rendering, printing orientation state every step. Setting $\beta = 0$ (no position correction whatsoever) gave the identical divergence, which meant the bug was somewhere upstream of stabilization entirely. Instrumenting the solver directly found it: a Cramer's-rule linear solve inside the constraint math used an absolute numerical-singularity threshold, `|determinant| < 1e-10`. A 549-tonne rocket's inverse inertia is naturally tiny in SI units, small enough that the rotational constraint's determinant fell under that fixed threshold even though the matrix itself was perfectly well conditioned. The rotational correction was silently returning zero every single step, at that one mass scale, while translation kept working fine and kept feeding a little unopposed angular velocity into the cone every frame. No crash, no error. It just quietly did nothing. The fix was replacing the absolute threshold with one scaled to the actual matrix magnitude, and the broader lesson stuck with me: a numerical safety check that looks conservative at cubesat mass scales can be actively wrong at rocket mass scales, and the failure mode for that kind of bug is never a crash, it's a plausible-looking wrong answer.
+
+## Actuators as forces
+
+Reaction wheels and gimbaled thrusters are both implemented as `ForceGenerator`s attached to a body. The integrator has no special case for "this force came from an actuator" versus "this force came from a spring or a collision impulse." A reaction wheel tracks its own spin state, applies the commanded torque (negated onto the body, by Newton's third law) up to a max torque limit, and includes a `healthFactor` fault model. A degraded wheel delivers a fraction of commanded torque, a dead one delivers none, without the flight software needing to know the mechanism, only the resulting torque. Thrusters are gimbaled and throttled, fired directly each frame rather than stepped automatically like a wheel is. Neither actuator type is spacecraft-specific in the engine itself. Attaching a reaction wheel to a non-spacecraft body works exactly the same way, which is really the point of keeping actuators as generic force generators instead of a specialized subsystem.
+
+## The orbital mechanics module
+
+The engine's core `RigidBody` state is float32, which is fine for local dynamics but falls apart at real orbital scale. A low-Earth-orbit radius (about 6.9 x 10⁶ m) leaves float32 with only meter-level precision, and that error compounds every integration step over a mission that can run for months. So orbital propagation lives in a separate, self-contained double-precision module (`glm::dvec3`/`glm::dquat` throughout) with its own RK4 integrator and a set of pluggable force models: two-body gravity, J2 (Earth's oblateness, the dominant secular effect a point-mass model misses, driving real nodal regression and apsidal drift), third-body perturbation from the Sun and Moon, atmospheric drag, and solar radiation pressure. A `CelestialSystem` generalizes this into an actual multi-body hierarchy, Sun to Earth to Moon, each body either propagated or driven by an analytic ephemeris, rather than hardcoding Earth-specific constants into each force model.
+
+The bridge back to `RigidBody` is a fresh, non-accumulating copy of the double-precision truth into the body's position every frame, rather than letting `PhysicsWorld` integrate translational motion on its own for an orbiting body. The body's rotational dynamics (orientation, angular velocity, actuator forces) keep integrating exactly like any other `RigidBody` in parallel, just with its position sourced from the higher-precision propagator instead of its own float32 stepping. This split is exactly what let [CubeSat ADCS](/projects/cubesat-adcs) build a real single-satellite orbit, J2 drift, eclipse geometry, ground-station visibility, underneath its flight software without either project needing to know about the other's internals. The orbit module doesn't know what a satellite is, and the ADCS flight software doesn't know it's reading a bridged double-precision state instead of ordinary rigid-body integration.
+
+## Lessons learned
+
+Separating this from what became satellite-adcs-sim was the right call, even though it meant more upfront structure than just continuing to bolt more onto one monolithic simulator. The two projects want genuinely different things from "the physics." One wants a general, reusable rigid-body engine with no idea what a satellite even is. The other wants to stay hardware-abstracted from all of it, reading nothing but plain sensor values regardless of what's actually simulating them underneath. Keeping that boundary meant I could rebuild the joint system around a handful of shared constraint primitives instead of accumulating one-off joints, add real orbital dynamics without touching a single line of flight-software code, and trust that a bug in one almost never means a bug in the other. The Cramer's-rule bug above is the clearest example of why that separation paid for itself. It was a pure numerical-conditioning issue in the constraint solver, entirely invisible to and unaffected by anything the flight software was doing, and finding it never required touching the FSW code at all.

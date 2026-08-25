@@ -1,12 +1,14 @@
+import "katex/dist/katex.min.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { ArrowLeft, SquareCode, ExternalLink, PlayCircle, Smartphone } from "lucide-react";
 import { getAllProjectSlugs, getProjectBySlug } from "@/lib/projects";
 import { mdxComponents } from "@/components/mdx-components";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Tag } from "@/components/Tag";
 import { FadeIn } from "@/components/FadeIn";
 import { MediaGallery } from "@/components/MediaGallery";
 
@@ -67,12 +69,6 @@ export default async function ProjectPage({
 
         <p className="mt-4 text-lg leading-relaxed text-muted">{project.description}</p>
 
-        <div className="mt-6 flex flex-wrap gap-1.5">
-          {project.tags.map((tag) => (
-            <Tag key={tag}>{tag}</Tag>
-          ))}
-        </div>
-
         {project.links &&
           (project.links.github ||
             project.links.demo ||
@@ -131,7 +127,16 @@ export default async function ProjectPage({
 
       <FadeIn delay={100}>
         <div className="mt-12">
-          <MDXRemote source={project.content} components={mdxComponents} />
+          <MDXRemote
+            source={project.content}
+            components={mdxComponents}
+            options={{
+              mdxOptions: {
+                remarkPlugins: [remarkMath],
+                rehypePlugins: [rehypeKatex],
+              },
+            }}
+          />
         </div>
       </FadeIn>
     </article>
