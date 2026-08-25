@@ -20,36 +20,22 @@ const INTERESTS = [
 ];
 
 const SKILLS: { category: string; items: string[] }[] = [
-  { category: "Languages", items: ["C++", "C", "Python", "TypeScript"] },
+  { category: "Languages", items: ["C++", "C", "Python", "TypeScript", "Swift"] },
   {
     category: "Systems & Embedded",
-    items: ["STM32", "Real-Time Control", "IMU/Sensor Fusion", "PID Control"],
+    items: ["ESP32", "Raspberry Pi", "SimpleFOC/FOC", "Real-Time Control", "IMU/Sensor Fusion", "PID/LQR Control"],
   },
   {
     category: "Simulation & Graphics",
-    items: ["OpenGL", "Orbital Mechanics", "Quaternion Math", "Numerical Methods"],
+    items: ["OpenGL/GLSL", "Orbital Mechanics", "Quaternion Math", "Kalman Filtering", "Rigid Body Dynamics"],
+  },
+  {
+    category: "AI/ML",
+    items: ["LLM Agents & Tool Calling", "RAG", "Vector Databases", "LSTM/Time Series", "CNNs"],
   },
   {
     category: "Web & Cloud",
-    items: ["Next.js", "React", "Supabase", "Postgres", "AWS"],
-  },
-];
-
-const CURRENTLY_BUILDING = [
-  {
-    title: "Satellite ADCS Simulation",
-    description:
-      "A full attitude determination and control stack for a satellite, extending prior simulation and reaction-wheel control work toward flight-representative hardware.",
-  },
-  {
-    title: "CFD Simulation",
-    description:
-      "A computational fluid dynamics tool for exploring flow behavior around simple geometries, built to deepen intuition for aerodynamic and thermal problems.",
-  },
-  {
-    title: "Embedded Flight Computer",
-    description:
-      "A from-scratch embedded flight computer stack (sensor drivers, scheduling, and fault handling) designed with spacecraft and rocketry avionics in mind.",
+    items: ["Next.js", "React", "Supabase", "Postgres", "AWS", "WebRTC"],
   },
 ];
 
@@ -150,36 +136,6 @@ export default function AboutPage() {
                     </span>
                   ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </FadeIn>
-
-      {/* Currently building */}
-      <FadeIn>
-        <div className="mt-20">
-          <SectionHeading
-            index="04"
-            label="In Progress"
-            title="Currently building"
-            description="Active work-in-progress projects, in various states of assembly."
-          />
-          <div className="mt-8 space-y-4">
-            {CURRENTLY_BUILDING.map((item) => (
-              <div
-                key={item.title}
-                className="rounded-lg border border-border bg-surface p-5"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-data" />
-                  <h3 className="font-mono text-sm uppercase tracking-widest text-foreground">
-                    {item.title}
-                  </h3>
-                </div>
-                <p className="mt-2 text-[15px] leading-relaxed text-muted">
-                  {item.description}
-                </p>
               </div>
             ))}
           </div>
