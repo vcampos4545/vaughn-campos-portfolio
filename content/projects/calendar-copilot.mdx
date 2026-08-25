@@ -1,0 +1,22 @@
+---
+title: "Calendar Copilot"
+description: "An AI calendar assistant that reads and edits your Google Calendar through natural language, with tool-calling support for flight search, email drafting, and weather-aware packing lists."
+status: "active"
+featured: true
+order: 9
+year: "2026"
+diagram: "circuit"
+links: { github: "https://github.com/vcampos4545/calendar-copilot" }
+---
+
+I wanted a calendar tool I could just talk to instead of clicking through Google Calendar's UI every time I needed to check my schedule or find time for something. Calendar Copilot is that: a chat interface backed by an OpenAI function-calling agent that can read your calendar, create and edit events, and reach out to a handful of other tools when a request needs more than just calendar data.
+
+## What it actually does
+
+The agent has eight tools available to it: reading events, creating, updating, and deleting them, finding free time across a date range, searching flights through Amadeus, drafting an email, and pulling a weather forecast to build a packing list. Ask it something like "find me an hour this week to call the dentist" and it reads your events, computes free slots against your working hours in your actual timezone, and proposes times, rather than you doing that math by hand. Ask it to plan a trip and it can search real flights, check the weather at the destination, and draft a packing list off both.
+
+The free-slot logic ended up being the fussiest part despite sounding trivial: comparing event times against a working-hours window correctly means being careful about timezone conversion at every step, an event stored in UTC, working hours defined in the user's local time, and the two need to line up exactly or you get free slots that are off by however many hours the timezone offset is.
+
+## Being honest about how this got built
+
+This one was largely AI-assisted, closer to describing what I wanted and iterating on it than architecting it line by line the way my other projects are. I think that's worth saying plainly rather than dressing it up as a from-scratch deep dive. It's a genuinely useful tool I actually use, and a different kind of AI project than the RAG pipeline in Mulligan AI, an agent deciding which tool to call and when, rather than retrieving context and grounding a single generation in it.
