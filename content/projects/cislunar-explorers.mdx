@@ -1,0 +1,20 @@
+---
+title: "Cislunar Explorers"
+description: "A student research team building a pair of 3U CubeSats for lunar orbit under NASA's CubeQuest Challenge. I trained a CNN to detect the Sun, Earth, and Moon for optical attitude determination."
+status: "completed"
+featured: true
+order: 8
+year: "2020 to 2021"
+diagram: "orbit"
+links: { github: "https://github.com/Cislunar-Explorers/FlightSoftware6U" }
+---
+
+Cislunar Explorers was a credit-bearing student research team, two L-shaped 3U CubeSats designed to dock together into a single 6U pair, built to validate water electrolysis propulsion and reach lunar orbit under NASA's CubeQuest Challenge. The mission had a launch slot secured as a rideshare on Artemis I, but the spacecraft missed its 2021 delivery deadline and never flew. I want to be upfront about scope here: this was a large team effort over several years, and my own contribution was one small piece of the attitude determination system, not the mission itself.
+
+## What I actually worked on
+
+The onboard computer was a Raspberry Pi, paired with three Raspberry Pi cameras mounted one to an axis, so the spacecraft could image whatever each axis happened to be pointed at. The idea was to use the Sun, Earth, and Moon themselves as attitude references: detect which body is in frame and roughly where, and feed that into the optical attitude and position determination system instead of relying on more expensive dedicated hardware. My part was training a CNN to do that detection, classifying and localizing the Sun, Earth, and Moon in raw camera frames from COTS hardware that was never going to have the clean, high-contrast imagery a real star tracker gets.
+
+## Why it still mattered even though it never flew
+
+The mission not launching doesn't erase the engineering. Optical navigation on genuinely cheap, off-the-shelf hardware is exactly the kind of constraint that forces real tradeoffs instead of assuming a big budget away, and it's the same territory I've since come back to independently in [Satellite ADCS](/projects/satellite-adcs)'s sun sensor and star tracker modeling, just with a lot less money and a lot more team coordination the first time around.
