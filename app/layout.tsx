@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     "Software Engineer",
     "Robotics",
     "Embedded Systems",
-    "Spacecraft Dynamics",
+    "Rigid-Body Physics",
     "Satellite ADCS",
     "GNC",
   ],

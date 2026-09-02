@@ -1,13 +1,13 @@
 ---
-title: "Spacecraft Dynamics Simulation"
-description: "A lightweight C++ rigid-body physics library with a composable joint system, built around spacecraft example scenarios."
-status: "completed"
+title: "rigidbody"
+description: "A general-purpose C++ rigid-body physics engine — constraints, actuators, sensors, and a double-precision orbital-mechanics module — for writing real controls/flight software against a simulated vehicle."
+status: "active"
 featured: true
 order: 3
 year: "2024"
 diagram: "grid"
 heroImage: "/images/projects/spacecraft-dynamics.png"
-links: { github: "https://github.com/vcampos4545/spacecraft-dynamics-sim" }
+links: { github: "https://github.com/vcampos4545/rigidbody" }
 media:
   [
     "/images/projects/starship-landing.mov",
@@ -18,7 +18,7 @@ media:
   ]
 ---
 
-I've always been fascinated by physics and by modeling the world around me, so at some point building my own simulated world felt inevitable. That's what became [rigidbody](https://github.com/vcampos4545/spacecraft-dynamics-sim), a general-purpose rigid-body physics engine, but with my actual passion, aerospace, mixed in from the start. It started life as one monolithic spacecraft simulator and grew into something closer to a real physics library, and along the way I ended up learning a lot more about integration schemes, collision geometry, and constraint solving than I expected to. This is a walk through how it actually works.
+I've always been fascinated by physics and by modeling the world around me, so at some point building my own simulated world felt inevitable. That's what became [rigidbody](https://github.com/vcampos4545/rigidbody), a general-purpose rigid-body physics engine, but with my actual passion, aerospace, mixed in from the start. It started life as one monolithic spacecraft simulator and grew into something closer to a real physics library, and along the way I ended up learning a lot more about integration schemes, collision geometry, and constraint solving than I expected to. This is a walk through how it actually works.
 
 ## What a rigid-body engine has to model
 
